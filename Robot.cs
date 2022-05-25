@@ -268,13 +268,16 @@ public class Robot : MonoBehaviour
                     if (segment.SearchEntity(cX, cY, cZ) is StorageMachineInterface storageMachineInterface)
                     {
                         storageMachineInterface.TryExtractAny(null, 9999, out ItemBase item);
-                        inventory.Add(item);
-                        if (digSound != null)
+                        if (item != null)
                         {
-                            AudioSource.PlayClipAtPoint(digSound, transform.position);
+                            inventory.Add(item);
+                            if (digSound != null)
+                            {
+                                AudioSource.PlayClipAtPoint(digSound, transform.position);
+                            }
+                            networkSound = "dig";
+                            UpdateInventory();
                         }
-                        networkSound = "dig";
-                        UpdateInventory();
                     }
                 }
             }
