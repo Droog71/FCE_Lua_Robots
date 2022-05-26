@@ -15,12 +15,7 @@ public class Robot : MonoBehaviour
     public AudioClip digSound;
     public AudioClip buildSound;
     public AudioClip robotSound;
-    private float moveCount;
-    private float digCount;
-    private float buildCount;
-    private float harvestCount;
-    private float takeFromHopperCount;
-    private float emptyToHopperCount;
+    private float actionCount;
     private UnityEngine.Coroutine moveCoroutine;
     private UnityEngine.Coroutine digCoroutine;
     private UnityEngine.Coroutine buildCoroutine;
@@ -74,8 +69,8 @@ public class Robot : MonoBehaviour
     // Moves the robot.
     private IEnumerator MoveEnum(int x, int y, int z)
     {
-        moveCount += 0.5f;
-        yield return new WaitForSeconds(moveCount);
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
         Vector3 newPos = transform.position + new Vector3(x, y, z);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(newPos, out long cX, out long cY, out long cZ);
         ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
@@ -93,8 +88,8 @@ public class Robot : MonoBehaviour
     // Digs a cube below the robot.
     private IEnumerator DigEnum(int uX, int uY, int uZ)
     {
-        digCount += 0.5f;
-        yield return new WaitForSeconds(digCount);
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
         Vector3 digPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(digPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
@@ -148,8 +143,8 @@ public class Robot : MonoBehaviour
     // Places a cube below the robot.
     private IEnumerator BuildEnum(int uX, int uY, int uZ)
     {
-        buildCount += 0.5f;
-        yield return new WaitForSeconds(buildCount);
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
         Vector3 buildPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(buildPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
@@ -196,8 +191,8 @@ public class Robot : MonoBehaviour
     // Harvests seeds from hydroponics bays.
     private IEnumerator HarvestEnum(int uX, int uY, int uZ)
     {
-        harvestCount += 0.5f;
-        yield return new WaitForSeconds(harvestCount);
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
         if (WorldScript.mbIsServer)
         {
             Vector3 harvestPos = transform.position + new Vector3(uX, uY, uZ);
@@ -248,8 +243,8 @@ public class Robot : MonoBehaviour
     // Takes items from a hopper.
     private IEnumerator TakeFromHopperEnum(int uX, int uY, int uZ)
     {
-        takeFromHopperCount += 0.5f;
-        yield return new WaitForSeconds(takeFromHopperCount);
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
         Vector3 hopperPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
@@ -287,8 +282,8 @@ public class Robot : MonoBehaviour
     // Adds items to a hopper.
     private IEnumerator EmptyToHopperEnum(int uX, int uY, int uZ)
     {
-        emptyToHopperCount += 0.5f;
-        yield return new WaitForSeconds(emptyToHopperCount);
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
         Vector3 hopperPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
@@ -407,11 +402,6 @@ public class Robot : MonoBehaviour
 
         script.DoString(scriptCode);
 
-        moveCount = 0;
-        digCount = 0;
-        buildCount = 0;
-        harvestCount = 0;
-        takeFromHopperCount = 0;
-        emptyToHopperCount = 0;
+        actionCount = 0;
     }
 }
