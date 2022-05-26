@@ -723,9 +723,19 @@ public class LuaBots : FortressCraftMod
     // Called by Unity engine for rendering and handling GUI events.
     public void OnGUI()
     {
+        Rect craftLuaBotRect = new Rect(Screen.width * 0.78f, Screen.width * 0.037f, Screen.width * 0.18f, Screen.width * 0.06f);
+        Rect codeEditingRect = new Rect(Screen.width * 0.1f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
+        Rect inventoryRect = new Rect(Screen.width * 0.425f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
+        Rect fileNameRect = new Rect(Screen.width * 0.1f, Screen.width * 0.415f, Screen.width * 0.3f, Screen.width * 0.02f);
+        Rect runButtonRect = new Rect(Screen.width * 0.1f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
+        Rect saveButtonRect = new Rect(Screen.width * 0.2f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
+        Rect loadButtonRect = new Rect(Screen.width * 0.3f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
+        Rect closeButtonRect = new Rect(Screen.width * 0.4f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
+        Rect destroyButtonRect = new Rect(Screen.width * 0.6f, Screen.width * 0.44f, Screen.width * 0.12f, Screen.width * 0.02f);
+
         if (InventoryPanelScript.mbIsActive == true)
         {
-            if (GUI.Button(new Rect(Screen.width - 250, 50, 225, 50), "Build Lua Bot\n(Requires 1x ConstructoBot Crate)"))
+            if (GUI.Button(craftLuaBotRect, "Craft Lua Bot\n(1x ConstructoBot Crate)"))
             {
                 if (CraftRobot())
                 {
@@ -754,11 +764,11 @@ public class LuaBots : FortressCraftMod
 
         if (displayGUI)
         {
-            currentRobot.program = GUI.TextArea(new Rect(100, 100, 400, 400), currentRobot.program);
+            currentRobot.program = GUI.TextArea(codeEditingRect, currentRobot.program);
 
-            GUI.TextArea(new Rect(600, 100, 400, 400), currentRobot.inventoryDisplay);
+            GUI.TextArea(inventoryRect, currentRobot.inventoryDisplay);
 
-            if (GUI.Button(new Rect(100, 560, 50, 25), "Run"))
+            if (GUI.Button(runButtonRect, "Run"))
             {
                 if (currentRobot != null)
                 {
@@ -780,24 +790,24 @@ public class LuaBots : FortressCraftMod
                 }
             }
 
-            currentRobot.fileName = GUI.TextField(new Rect(100, 525, 400, 25), currentRobot.fileName);
+            currentRobot.fileName = GUI.TextField(fileNameRect, currentRobot.fileName);
 
-            if (GUI.Button(new Rect(200, 560, 50, 25), "Save"))
+            if (GUI.Button(saveButtonRect, "Save"))
             {
                 SaveProgram();
             }
 
-            if (GUI.Button(new Rect(300, 560, 50, 25), "Load"))
+            if (GUI.Button(loadButtonRect, "Load"))
             {
                 LoadProgram();
             }
 
-            if (GUI.Button(new Rect(400, 560, 50, 25), "Close"))
+            if (GUI.Button(closeButtonRect, "Close"))
             {
                 CloseGUI();
             }
 
-            if (GUI.Button(new Rect(600, 560, 100, 25), "Destroy Robot"))
+            if (GUI.Button(destroyButtonRect, "Destroy Robot"))
             {
                 if (NetworkManager.instance.mClientThread != null)
                 {
