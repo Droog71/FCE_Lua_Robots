@@ -22,14 +22,8 @@ public class Robot : MonoBehaviour
     private UnityEngine.Coroutine harvestCoroutine;
     private UnityEngine.Coroutine takeFromHopperCoroutine;
     private UnityEngine.Coroutine emptyToHopperCoroutine;
-    private delegate void Action();
-    private delegate void Action<T>(T t);
-    private delegate void Action<T, U>(T t, U u);
     private delegate void Action<T, U, V>(T t, U u, V v);
-    private delegate TResult Func<TResult>();
-    private delegate TResult Func<T, TResult>(T t);
-    private delegate TResult Func<T, U, TResult>(T t, U u);
-    private delegate TResult Func<T, U, V, TResult>(T t, U u, V v);
+    private delegate TResult Func<in T1, in T2, in T3, out TResult> (T1 arg1, T2 arg2, T3 arg3);
 
     // Initialization.
     public IEnumerator Start()
@@ -354,31 +348,58 @@ public class Robot : MonoBehaviour
     // Dig function called by lua scripts.
     private void Dig(int x, int y, int z)
     {
+        x = x > 1 ? 1 : x;
+        y = y > 1 ? 1 : y;
+        z = z > 1 ? 1 : z;
         digCoroutine = StartCoroutine(DigEnum(x, y, z));
     }
 
     // Build function called by lua scripts.
     private void Build(int x, int y, int z)
     {
+        x = x > 1 ? 1 : x;
+        y = y > 1 ? 1 : y;
+        z = z > 1 ? 1 : z;
         buildCoroutine = StartCoroutine(BuildEnum(x, y, z));
     }
 
     // Harvest function called by lua scripts.
     private void Harvest(int x, int y, int z)
     {
+        x = x > 1 ? 1 : x;
+        y = y > 1 ? 1 : y;
+        z = z > 1 ? 1 : z;
         harvestCoroutine = StartCoroutine(HarvestEnum(x, y, z));
     }
 
     // Hopper function called by lua scripts.
     private void TakeFromHopper(int x, int y, int z)
     {
+        x = x > 1 ? 1 : x;
+        y = y > 1 ? 1 : y;
+        z = z > 1 ? 1 : z;
         takeFromHopperCoroutine = StartCoroutine(TakeFromHopperEnum(x, y, z));
     }
 
     // Hopper function called by lua scripts.
     private void EmptyToHopper(int x, int y, int z)
     {
+        x = x > 1 ? 1 : x;
+        y = y > 1 ? 1 : y;
+        z = z > 1 ? 1 : z;
         emptyToHopperCoroutine = StartCoroutine(EmptyToHopperEnum(x, y, z));
+    }
+
+    // Returns true if the cube at the given coordinates is passable.
+    private bool IsPassable(int x, int y, int z)
+    {
+        x = x > 1 ? 1 : x;
+        y = y > 1 ? 1 : y;
+        z = z > 1 ? 1 : z;
+        Vector3 checkPos = transform.position + new Vector3(x, y, z);
+        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(checkPos, out long cX, out long cY, out long cZ);
+        ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
+        return CubeHelper.IsTypeConsideredPassable(localCube);
     }
 
     // Runs the robot's lua program.
@@ -399,6 +420,8 @@ public class Robot : MonoBehaviour
         script.Globals["TakeFromHopper"] = (Action<int, int, int>)TakeFromHopper;
 
         script.Globals["EmptyToHopper"] = (Action<int, int, int>)EmptyToHopper;
+
+        script.Globals["IsPassable"] = (Func<int, int, int, bool>)IsPassable;
 
         script.DoString(scriptCode);
 

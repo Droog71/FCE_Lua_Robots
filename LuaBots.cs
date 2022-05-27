@@ -37,24 +37,30 @@ public class LuaBots : FortressCraftMod
     private static bool spawningRobot;
     private static Vector3 robotSpawnPos;
     private static int robotSpawnID;
+    private static ParticleSystem spawnEffect;
 
     private static Mesh robotMesh;
     private static Texture2D robotTexture;
+    private Texture2D guiBackgroundTexture;
+
     private static AudioClip digSound;
+    private static AudioClip bootSound;
     private static AudioClip buildSound;
     private static AudioClip robotSound;
     private Dictionary<string, AudioClip> audioDictionary;
 
     private static readonly string assemblyFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-
-    private static readonly string robotModelPath = Path.Combine(assemblyFolder, "Models/robot.obj");
+    private static readonly string guiBackgroundTextureString = Path.Combine(assemblyFolder, "Images/background.png");
     private static readonly string robotTexturePath = Path.Combine(assemblyFolder, "Images/robot.png");
+    private static readonly string robotModelPath = Path.Combine(assemblyFolder, "Models/robot.obj");
     private static readonly string digAudioPath = Path.Combine(assemblyFolder, "Sounds/dig.wav");
+    private static readonly string bootAudioPath = Path.Combine(assemblyFolder, "Sounds/boot.wav");
     private static readonly string buildAudioPath = Path.Combine(assemblyFolder, "Sounds/build.wav");
     private static readonly string robotAudioPath = Path.Combine(assemblyFolder, "Sounds/robot.wav");
-
+    private UriBuilder guiTexUriBuildier = new UriBuilder(guiBackgroundTextureString);
     private UriBuilder robotTextureUriBuilder = new UriBuilder(robotTexturePath);
     private UriBuilder digAudioUribuilder = new UriBuilder(digAudioPath);
+    private UriBuilder bootAudioUribuilder = new UriBuilder(bootAudioPath);
     private UriBuilder buildAudioUribuilder = new UriBuilder(buildAudioPath);
     private UriBuilder robotAudioUribuilder = new UriBuilder(robotAudioPath);
 
@@ -89,6 +95,14 @@ public class LuaBots : FortressCraftMod
             www.LoadImageIntoTexture(robotTexture);
         }
 
+        guiTexUriBuildier.Scheme = "file";
+        guiBackgroundTexture = new Texture2D(598, 358, TextureFormat.DXT5, false);
+        using (WWW www = new WWW(guiTexUriBuildier.ToString()))
+        {
+            yield return www;
+            www.LoadImageIntoTexture(guiBackgroundTexture);
+        }
+
         ObjImporter importer = new ObjImporter();
         robotMesh = importer.ImportFile(robotModelPath);
 
@@ -106,6 +120,13 @@ public class LuaBots : FortressCraftMod
             digSound = www.GetAudioClip();
         }
 
+        bootAudioUribuilder.Scheme = "file";
+        using (WWW www = new WWW(bootAudioUribuilder.ToString()))
+        {
+            yield return www;
+            bootSound = www.GetAudioClip();
+        }
+
         buildAudioUribuilder.Scheme = "file";
         using (WWW www = new WWW(buildAudioUribuilder.ToString()))
         {
@@ -121,6 +142,7 @@ public class LuaBots : FortressCraftMod
         }
 
         audioDictionary.Add("dig", digSound);
+        audioDictionary.Add("boot", bootSound);
         audioDictionary.Add("build", buildSound);
     }
 
@@ -211,6 +233,7 @@ public class LuaBots : FortressCraftMod
 
                 if (removeClientBot)
                 {
+                    SpawnEffects(robots[i].transform.position);
                     Destroy(robots[i].gameObject);
                     removeClientBot = false;
                 }
@@ -490,7 +513,33 @@ public class LuaBots : FortressCraftMod
         robot.GetComponent<Robot>().buildSound = buildSound;
         robot.GetComponent<Robot>().robotSound = robotSound;
         robot.transform.position = pos;
+        SpawnEffects(pos);
         return robot;
+    }
+
+    // Plays boot sound and spawns particle effects.
+    private static void SpawnEffects(Vector3 pos)
+    {
+        if (bootSound != null)
+        {
+            AudioSource.PlayClipAtPoint(bootSound, pos);
+        }
+
+        if (spawnEffect == null)
+        {
+            if (SurvivalParticleManager.instance != null)
+            {
+                if (SurvivalParticleManager.instance.NetworkBuildParticles != null)
+                {
+                    spawnEffect = SurvivalParticleManager.instance.NetworkBuildParticles;
+                }
+            }
+        }
+        else
+        {
+            spawnEffect.transform.position = pos;
+            spawnEffect.Emit(15);
+        }
     }
 
     // Opens the robot GUI.
@@ -709,21 +758,85 @@ public class LuaBots : FortressCraftMod
         return false;
     }
 
+    // Attempts to spawn a new robot.
+    private void RequestNewRobot()
+    {
+        long x = WorldScript.mLocalPlayer.mnWorldX;
+        long y = WorldScript.mLocalPlayer.mnWorldY;
+        long z = WorldScript.mLocalPlayer.mnWorldZ;
+        Vector3 spawnCoords = WorldScript.instance.mPlayerFrustrum.GetCoordsToUnity(x, y, z);
+        Vector3 spawnPos = new Vector3(spawnCoords.x + 0.5f, spawnCoords.y + 0.5f, spawnCoords.z + 0.5f);
+        if (NetworkManager.instance.mClientThread != null)
+        {
+            LuaBotNetworkMessage msg = new LuaBotNetworkMessage
+            {
+                msgType = 0,
+                position = spawnPos,
+                program = ""
+            };
+            ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
+        }
+        else
+        {
+            SpawnRobot(spawnPos, FindID(), this);
+        }
+    }
+
     // Destroys a robot.
     private void DestroyRobot()
     {
-        string worldName = WorldScript.instance.mWorldData.mName;
-        string robotFilePath = Path.Combine(assemblyFolder, "Save/" + worldName + "/" + currentRobot.id + ".sav");
-        File.Delete(robotFilePath);
-        Destroy(currentRobot.gameObject);
+        if (NetworkManager.instance.mClientThread != null)
+        {
+            LuaBotNetworkMessage msg = new LuaBotNetworkMessage
+            {
+                msgType = 2,
+                id = currentRobot.id,
+                position = currentRobot.transform.position,
+                program = "",
+            };
+            ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
+        }
+        else
+        {
+            string worldName = WorldScript.instance.mWorldData.mName;
+            string robotFilePath = Path.Combine(assemblyFolder, "Save/" + worldName + "/" + currentRobot.id + ".sav");
+            File.Delete(robotFilePath);
+            SpawnEffects(currentRobot.transform.position);
+            Destroy(currentRobot.gameObject);
+        }
         WorldScript.mLocalPlayer.mInventory.CollectValue(eCubeTypes.ConstructoBotCrate, 0, 1);
         CloseGUI();
+    }
+
+    // Starts the lua script for the current robot.
+    private void StartRobot()
+    {
+        if (currentRobot != null)
+        {
+            if (NetworkManager.instance.mClientThread != null)
+            {
+                LuaBotNetworkMessage msg = new LuaBotNetworkMessage
+                {
+                    msgType = 1,
+                    id = currentRobot.id,
+                    position = currentRobot.transform.position,
+                    program = currentRobot.program
+                };
+                ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
+            }
+            else
+            {
+                currentRobot.RunScript();
+            }
+        }
     }
 
     // Called by Unity engine for rendering and handling GUI events.
     public void OnGUI()
     {
-        Rect craftLuaBotRect = new Rect(Screen.width * 0.78f, Screen.width * 0.037f, Screen.width * 0.18f, Screen.width * 0.06f);
+        Rect guiBackgroundRect = new Rect(Screen.width * 0.04f, Screen.width * 0.0425f, Screen.width * 0.75f, Screen.width * 0.475f);
+        Rect buttonBackgroundRect = new Rect(Screen.width * 0.795f, Screen.width * 0.027f, Screen.width * 0.2f, Screen.width * 0.08f);
+        Rect spawnLuaBotRect = new Rect(Screen.width * 0.81f, Screen.width * 0.037f, Screen.width * 0.17f, Screen.width * 0.06f);
         Rect codeEditingRect = new Rect(Screen.width * 0.1f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
         Rect inventoryRect = new Rect(Screen.width * 0.425f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
         Rect fileNameRect = new Rect(Screen.width * 0.1f, Screen.width * 0.415f, Screen.width * 0.3f, Screen.width * 0.02f);
@@ -733,64 +846,29 @@ public class LuaBots : FortressCraftMod
         Rect closeButtonRect = new Rect(Screen.width * 0.4f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
         Rect destroyButtonRect = new Rect(Screen.width * 0.6f, Screen.width * 0.44f, Screen.width * 0.12f, Screen.width * 0.02f);
 
-        if (InventoryPanelScript.mbIsActive == true)
+        if (InventoryPanelScript.mbIsActive)
         {
-            if (GUI.Button(craftLuaBotRect, "Craft Lua Bot\n(1x ConstructoBot Crate)"))
+            GUI.DrawTexture(buttonBackgroundRect, guiBackgroundTexture);
+            if (GUI.Button(spawnLuaBotRect, "Spawn Lua Bot\n(1x ConstructoBot Crate)"))
             {
                 if (CraftRobot())
                 {
-                    long x = WorldScript.mLocalPlayer.mnWorldX;
-                    long y = WorldScript.mLocalPlayer.mnWorldY;
-                    long z = WorldScript.mLocalPlayer.mnWorldZ;
-                    Vector3 spawnCoords = WorldScript.instance.mPlayerFrustrum.GetCoordsToUnity(x, y, z);
-                    Vector3 spawnPos = new Vector3(spawnCoords.x + 0.5f, spawnCoords.y + 0.5f, spawnCoords.z + 0.5f);
-                    if (NetworkManager.instance.mClientThread != null)
-                    {
-                        LuaBotNetworkMessage msg = new LuaBotNetworkMessage
-                        {
-                            msgType = 0,
-                            position = spawnPos,
-                            program = ""
-                        };
-                        ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
-                    }
-                    else
-                    {
-                        SpawnRobot(spawnPos, FindID(), this);
-                    }
+                    RequestNewRobot();
                 }
             }
         }
 
         if (displayGUI)
         {
+            GUI.DrawTexture(guiBackgroundRect, guiBackgroundTexture);
             currentRobot.program = GUI.TextArea(codeEditingRect, currentRobot.program);
-
+            currentRobot.fileName = GUI.TextField(fileNameRect, currentRobot.fileName);
             GUI.TextArea(inventoryRect, currentRobot.inventoryDisplay);
 
             if (GUI.Button(runButtonRect, "Run"))
             {
-                if (currentRobot != null)
-                {
-                    if (NetworkManager.instance.mClientThread != null)
-                    {
-                        LuaBotNetworkMessage msg = new LuaBotNetworkMessage
-                        {
-                            msgType = 1,
-                            id = currentRobot.id,
-                            position = currentRobot.transform.position,
-                            program = currentRobot.program
-                        };
-                        ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
-                    }
-                    else
-                    {
-                        currentRobot.RunScript();
-                    }
-                }
+                StartRobot();
             }
-
-            currentRobot.fileName = GUI.TextField(fileNameRect, currentRobot.fileName);
 
             if (GUI.Button(saveButtonRect, "Save"))
             {
@@ -809,21 +887,7 @@ public class LuaBots : FortressCraftMod
 
             if (GUI.Button(destroyButtonRect, "Destroy Robot"))
             {
-                if (NetworkManager.instance.mClientThread != null)
-                {
-                    LuaBotNetworkMessage msg = new LuaBotNetworkMessage
-                    {
-                        msgType = 2,
-                        id = currentRobot.id,
-                        position = currentRobot.transform.position,
-                        program = "",
-                    };
-                    ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
-                }
-                else
-                {
-                    DestroyRobot();
-                }
+                DestroyRobot();
             }
         }
     }
