@@ -295,6 +295,7 @@ public class Robot : MonoBehaviour
                 {
                     if (segment.SearchEntity(cX, cY, cZ) is StorageMachineInterface storageMachineInterface)
                     {
+                        bool addedItem = false;
                         for (int i = 0; i < inventory.Count; i++)
                         {
                             int freeSpace = storageMachineInterface.RemainingCapacity;
@@ -307,6 +308,7 @@ public class Robot : MonoBehaviour
                                     if (storageMachineInterface.TryInsert(null, splitStack))
                                     {
                                         inventory[i].DecrementStack(freeSpace);
+                                        addedItem = true;
                                     }
                                 }
                                 else if (inventory[i].mType == ItemType.ItemStack)
@@ -316,20 +318,25 @@ public class Robot : MonoBehaviour
                                     if (storageMachineInterface.TryInsert(null, splitStack))
                                     {
                                         inventory[i].DecrementStack(freeSpace);
+                                        addedItem = true;
                                     }
                                 }
                             }
                             else if (storageMachineInterface.TryInsert(null, inventory[i]))
                             {
                                 inventory.Remove(inventory[i]);
+                                addedItem = true;
                             }
                         }
-                        if (buildSound != null)
+                        if (addedItem == true)
                         {
-                            AudioSource.PlayClipAtPoint(buildSound, transform.position);
+                            if (buildSound != null)
+                            {
+                                AudioSource.PlayClipAtPoint(buildSound, transform.position);
+                            }
+                            networkSound = "build";
+                            UpdateInventory();
                         }
-                        networkSound = "build";
-                        UpdateInventory();
                     }
                 }
             }

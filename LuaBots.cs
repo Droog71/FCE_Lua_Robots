@@ -602,35 +602,35 @@ public class LuaBots : FortressCraftMod
         string saveFolder = Path.Combine(assemblyFolder, "Save/" + worldName);
         Directory.CreateDirectory(saveFolder);
         Robot[] robots = FindObjectsOfType<Robot>();
-        foreach (Robot robot in robots)
+        for (int i = 0; i < robots.Length; i++)
         {
-            string filePath = Path.Combine(saveFolder, robot.id.ToString() + ".sav");
-            string fileContent = robot.startPosition.x + ","
-            + robot.startPosition.y + "," 
-            + robot.startPosition.z + ":"
-            + robot.fileName + "}\n";
-            if (robot.inventory != null)
+            string filePath = Path.Combine(saveFolder, robots[i].id.ToString() + ".sav");
+            string fileContent = robots[i].startPosition.x + ","
+            + robots[i].startPosition.y + "," 
+            + robots[i].startPosition.z + ":"
+            + robots[i].fileName + "}\n";
+            if (robots[i].inventory != null)
             {
-                foreach (ItemBase item in robot.inventory)
+                for (int j = 0; j < robots[i].inventory.Count; j++)
                 {
-                    if (item.mType == ItemType.ItemCubeStack)
+                    if (robots[i].inventory[j].mType == ItemType.ItemCubeStack)
                     {
-                        ItemCubeStack stack = (ItemCubeStack) item;
+                        ItemCubeStack stack = (ItemCubeStack) robots[i].inventory[j];
                         fileContent += "ItemCubeStack" + ":"
                         + stack.mCubeType + ","
                         + stack.mCubeValue + ","
                         + stack.mnAmount + "\n";
                     }
-                    else if (item.mType == ItemType.ItemStack)
+                    else if (robots[i].inventory[j].mType == ItemType.ItemStack)
                     {
-                        ItemStack stack = (ItemStack) item;
+                        ItemStack stack = (ItemStack) robots[i].inventory[j];
                         fileContent += "ItemStack" + ":"
                         + stack.mnItemID + ","
                         + stack.mnAmount + "\n";
                     }
-                    else if (item.mType == ItemType.ItemSingle)
+                    else if (robots[i].inventory[j].mType == ItemType.ItemSingle)
                     {
-                        ItemSingle single = (ItemSingle)item;
+                        ItemSingle single = (ItemSingle)robots[i].inventory[j];
                         fileContent += "ItemSingle" + ":"
                         + single.mnItemID + "\n";
                     }
