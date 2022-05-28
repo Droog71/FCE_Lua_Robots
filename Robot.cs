@@ -339,63 +339,63 @@ public class Robot : MonoBehaviour
     // Move function called by lua scripts.
     private void Move(int x, int y, int z)
     {
-        x = x > 1 ? 1 : x;
-        y = y > 1 ? 1 : y;
-        z = z > 1 ? 1 : z;
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
         moveCoroutine = StartCoroutine(MoveEnum(x, y, z));
     }
 
     // Dig function called by lua scripts.
     private void Dig(int x, int y, int z)
     {
-        x = x > 1 ? 1 : x;
-        y = y > 1 ? 1 : y;
-        z = z > 1 ? 1 : z;
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
         digCoroutine = StartCoroutine(DigEnum(x, y, z));
     }
 
     // Build function called by lua scripts.
     private void Build(int x, int y, int z)
     {
-        x = x > 1 ? 1 : x;
-        y = y > 1 ? 1 : y;
-        z = z > 1 ? 1 : z;
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
         buildCoroutine = StartCoroutine(BuildEnum(x, y, z));
     }
 
     // Harvest function called by lua scripts.
     private void Harvest(int x, int y, int z)
     {
-        x = x > 1 ? 1 : x;
-        y = y > 1 ? 1 : y;
-        z = z > 1 ? 1 : z;
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
         harvestCoroutine = StartCoroutine(HarvestEnum(x, y, z));
     }
 
     // Hopper function called by lua scripts.
     private void TakeFromHopper(int x, int y, int z)
     {
-        x = x > 1 ? 1 : x;
-        y = y > 1 ? 1 : y;
-        z = z > 1 ? 1 : z;
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
         takeFromHopperCoroutine = StartCoroutine(TakeFromHopperEnum(x, y, z));
     }
 
     // Hopper function called by lua scripts.
     private void EmptyToHopper(int x, int y, int z)
     {
-        x = x > 1 ? 1 : x;
-        y = y > 1 ? 1 : y;
-        z = z > 1 ? 1 : z;
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
         emptyToHopperCoroutine = StartCoroutine(EmptyToHopperEnum(x, y, z));
     }
 
     // Returns true if the cube at the given coordinates is passable.
     private bool IsPassable(int x, int y, int z)
     {
-        x = x > 1 ? 1 : x;
-        y = y > 1 ? 1 : y;
-        z = z > 1 ? 1 : z;
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
         Vector3 checkPos = transform.position + new Vector3(x, y, z);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(checkPos, out long cX, out long cY, out long cZ);
         ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);

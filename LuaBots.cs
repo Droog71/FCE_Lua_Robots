@@ -14,6 +14,7 @@ public class LuaBots : FortressCraftMod
     private Coroutine audioLoadingCoroutine;
     private Coroutine serverUpdateCoroutine;
     private Coroutine networkMoveCoroutine;
+    private static Coroutine saveCoroutine;
     private static Coroutine botInfoCoroutine;
 
     public bool displayGUI;
@@ -153,20 +154,17 @@ public class LuaBots : FortressCraftMod
         Robot[] robots = FindObjectsOfType<Robot>();
         for (int i = 0; i < robots.Length; i++)
         {
-            if (!updatingBotInfo)
+            LuaBotNetworkMessage message = new LuaBotNetworkMessage
             {
-                LuaBotNetworkMessage message = new LuaBotNetworkMessage
-                {
-                    msgType = 1,
-                    id = robots[i].id,
-                    position = robots[i].transform.position,
-                    program = robots[i].program,
-                    inventory = robots[i].inventoryDisplay,
-                    sound = robots[i].networkSound
-                };
-                botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
-                robots[i].networkSound = "";
-            }
+                msgType = 1,
+                id = robots[i].id,
+                position = robots[i].transform.position,
+                program = robots[i].program,
+                inventory = robots[i].inventoryDisplay,
+                sound = robots[i].networkSound
+            };
+            botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
+            robots[i].networkSound = "";
             yield return new WaitForSeconds(0.125f);
         }
         botInfoUpdate = false;
@@ -191,19 +189,16 @@ public class LuaBots : FortressCraftMod
                     File.Delete(robotFilePath);
                     Destroy(robots[i].gameObject);
 
-                    if (!updatingBotInfo)
+                    LuaBotNetworkMessage message = new LuaBotNetworkMessage
                     {
-                        LuaBotNetworkMessage message = new LuaBotNetworkMessage
-                        {
-                            msgType = 2,
-                            id = serverUpdateID,
-                            position = serverUpdatePos,
-                            program = "",
-                            inventory = "",
-                            sound = ""
-                        };
-                        botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
-                    }
+                        msgType = 2,
+                        id = serverUpdateID,
+                        position = serverUpdatePos,
+                        program = "",
+                        inventory = "",
+                        sound = ""
+                    };
+                    botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
                 }
 
                 break;
@@ -272,12 +267,12 @@ public class LuaBots : FortressCraftMod
                 {
                     LoadRobots();
                 }
-                else
+                else if (GameState.State == GameStateEnum.Playing)
                 {
                     saveTimer += 1 * Time.deltaTime;
                     if (saveTimer >= 30)
                     {
-                        SaveRobots();
+                        saveCoroutine = StartCoroutine(SaveRobots());
                         saveTimer = 0;
                     }
                 }
@@ -451,6 +446,11 @@ public class LuaBots : FortressCraftMod
     // Sends information about a robot to all connected clients.
     private static IEnumerator SendBotInfoToClients(LuaBotNetworkMessage message)
     {
+        while (updatingBotInfo)
+        {
+            yield return null;
+        }
+
         updatingBotInfo = true;
         if (NetworkManager.instance != null)
         {
@@ -485,19 +485,16 @@ public class LuaBots : FortressCraftMod
             if (NetworkManager.instance.mServerThread != null)
             {
                 id = FindID();
-                if (!updatingBotInfo)
+                LuaBotNetworkMessage message = new LuaBotNetworkMessage
                 {
-                    LuaBotNetworkMessage message = new LuaBotNetworkMessage
-                    {
-                        msgType = 0,
-                        id = id,
-                        position = pos,
-                        program = "",
-                        inventory = "",
-                        sound = ""
-                    };
-                    botInfoCoroutine = starter.StartCoroutine(SendBotInfoToClients(message));
-                }
+                    msgType = 0,
+                    id = id,
+                    position = pos,
+                    program = "",
+                    inventory = "",
+                    sound = ""
+                };
+                botInfoCoroutine = starter.StartCoroutine(SendBotInfoToClients(message));
             }
         }
 
@@ -599,7 +596,7 @@ public class LuaBots : FortressCraftMod
     }
 
     // Saves information about all robots in the world to disk.
-    private static void SaveRobots()
+    private static IEnumerator SaveRobots()
     {
         string worldName = WorldScript.instance.mWorldData.mName;
         string saveFolder = Path.Combine(assemblyFolder, "Save/" + worldName);
@@ -637,9 +634,11 @@ public class LuaBots : FortressCraftMod
                         fileContent += "ItemSingle" + ":"
                         + single.mnItemID + "\n";
                     }
+                    yield return null;
                 }
             }
             File.WriteAllText(filePath, fileContent);
+            yield return null;
         }
     }
 
