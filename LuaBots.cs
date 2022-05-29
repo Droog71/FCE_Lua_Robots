@@ -26,12 +26,14 @@ public class LuaBots : FortressCraftMod
     private static int clientUpdateID;
     private static string clientUpdateInventory;
     private static Vector3 clientUpdatePos;
+    private static Vector3 clientUpdateLook;
     private static string clientUpdateSound;
     private static bool removeClientBot;
 
     private static bool serverUpdate;
     private static int serverUpdateID;
     private static Vector3 serverUpdatePos;
+    private static string serverUpdateFileName;
     private static string serverUpdateScript;
     private static bool removeServerBot;
 
@@ -68,10 +70,12 @@ public class LuaBots : FortressCraftMod
     // Holds information for network messages.
     private struct LuaBotNetworkMessage
     {
+        public int id;
         public int msgType;
         public Vector3 position;
+        public Vector3 lookDir;
+        public string fileName;
         public string program;
-        public int id;
         public string inventory;
         public string sound;
     }
@@ -154,17 +158,22 @@ public class LuaBots : FortressCraftMod
         Robot[] robots = FindObjectsOfType<Robot>();
         for (int i = 0; i < robots.Length; i++)
         {
-            LuaBotNetworkMessage message = new LuaBotNetworkMessage
+            if (robots[i] != null)
             {
-                msgType = 1,
-                id = robots[i].id,
-                position = robots[i].transform.position,
-                program = robots[i].program,
-                inventory = robots[i].inventoryDisplay,
-                sound = robots[i].networkSound
-            };
-            botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
-            robots[i].networkSound = "";
+                LuaBotNetworkMessage message = new LuaBotNetworkMessage
+                {
+                    msgType = 1,
+                    id = robots[i].id,
+                    position = robots[i].transform.position,
+                    lookDir = robots[i].lookDir,
+                    fileName = robots[i].fileName,
+                    program = robots[i].program,
+                    inventory = robots[i].inventoryDisplay,
+                    sound = robots[i].networkSound
+                };
+                botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
+                robots[i].networkSound = "";
+            }
             yield return new WaitForSeconds(0.125f);
         }
         botInfoUpdate = false;
@@ -178,6 +187,7 @@ public class LuaBots : FortressCraftMod
         {
             if (robots[i].id == serverUpdateID)
             {
+                robots[i].fileName = serverUpdateFileName;
                 robots[i].program = serverUpdateScript;
                 robots[i].RunScript();
 
@@ -194,6 +204,8 @@ public class LuaBots : FortressCraftMod
                         msgType = 2,
                         id = serverUpdateID,
                         position = serverUpdatePos,
+                        lookDir = robots[i].lookDir,
+                        fileName = "",
                         program = "",
                         inventory = "",
                         sound = ""
@@ -218,6 +230,8 @@ public class LuaBots : FortressCraftMod
             {
                 foundRobot = true;
                 Vector3 moveDir = (clientUpdatePos - robots[i].transform.position).normalized;
+                Vector3 lookDir = new Vector3(clientUpdateLook.x, robots[i].transform.position.y, clientUpdateLook.z);
+                robots[i].transform.LookAt(lookDir);
                 networkMoveCoroutine = StartCoroutine(MoveNetworkBot(robots[i].gameObject, moveDir, clientUpdatePos));
                 robots[i].inventoryDisplay = clientUpdateInventory;
 
@@ -250,10 +264,17 @@ public class LuaBots : FortressCraftMod
     {
         for (int i = 0; i < 4; i++)
         {
-            robot.transform.position += new Vector3(dir.x * 0.25f, dir.y * 0.25f, dir.z * 0.25f);
+            if (robot != null)
+            {
+                robot.transform.position += new Vector3(dir.x * 0.25f, dir.y * 0.25f, dir.z * 0.25f);
+            }
             yield return new WaitForSeconds(0.01f);
         }
-        robot.transform.position = target;
+
+        if (robot != null)
+        {
+            robot.transform.position = target;
+        }
     }
 
     // Called once per frame by unity engine.
@@ -333,6 +354,7 @@ public class LuaBots : FortressCraftMod
         writer.Write(message.position.x);
         writer.Write(message.position.y);
         writer.Write(message.position.z);
+        writer.Write(message.fileName);
         writer.Write(message.program);
         writer.Write(message.id);
     }
@@ -345,6 +367,9 @@ public class LuaBots : FortressCraftMod
         writer.Write(message.position.x);
         writer.Write(message.position.y);
         writer.Write(message.position.z);
+        writer.Write(message.lookDir.x);
+        writer.Write(message.lookDir.y);
+        writer.Write(message.lookDir.z);
         writer.Write(message.program);
         writer.Write(message.id);
         writer.Write(message.inventory);
@@ -355,15 +380,19 @@ public class LuaBots : FortressCraftMod
     private static void ClientRead(NetIncomingMessage message)
     {
         int msgType = message.ReadInt32();
-        float x = message.ReadFloat();
-        float y = message.ReadFloat();
-        float z = message.ReadFloat();
+        float posX = message.ReadFloat();
+        float posY = message.ReadFloat();
+        float posZ = message.ReadFloat();
+        float lookX = message.ReadFloat();
+        float lookY = message.ReadFloat();
+        float lookZ = message.ReadFloat();
         string program = message.ReadString();
         int id = message.ReadInt32();
         string inventory = message.ReadString();
         string sound = message.ReadString();
 
-        Vector3 robotPos = new Vector3(x, y, z);
+        Vector3 robotPos = new Vector3(posX, posY, posZ);
+        Vector3 robotLook = new Vector3(lookX, lookY, lookZ);
 
         if (msgType == 0)
         {
@@ -376,6 +405,7 @@ public class LuaBots : FortressCraftMod
         {
             clientUpdateID = id;
             clientUpdatePos = robotPos;
+            clientUpdateLook = robotLook;
             clientUpdateInventory = inventory;
             clientUpdateSound = sound;
             clientUpdate = true;
@@ -385,6 +415,7 @@ public class LuaBots : FortressCraftMod
         {
             clientUpdateID = id;
             clientUpdatePos = robotPos;
+            clientUpdateLook = robotLook;
             clientUpdateInventory = inventory;
             removeClientBot = true;
             clientUpdate = true;
@@ -398,6 +429,7 @@ public class LuaBots : FortressCraftMod
         float x = message.ReadFloat();
         float y = message.ReadFloat();
         float z = message.ReadFloat();
+        string fileName = message.ReadString();
         string program = message.ReadString();
         int id = message.ReadInt32();
 
@@ -413,6 +445,7 @@ public class LuaBots : FortressCraftMod
         if (msgType == 1)
         {
             serverUpdateID = id;
+            serverUpdateFileName = fileName;
             serverUpdateScript = program;
             serverUpdatePos = position;
             serverUpdate = true;
@@ -421,6 +454,7 @@ public class LuaBots : FortressCraftMod
         if (msgType == 2)
         {
             serverUpdateID = id;
+            serverUpdateFileName = fileName;
             serverUpdateScript = program;
             serverUpdatePos = position;
             removeServerBot = true;
@@ -490,6 +524,8 @@ public class LuaBots : FortressCraftMod
                     msgType = 0,
                     id = id,
                     position = pos,
+                    lookDir = new Vector3(pos.x,pos.y,pos.z + 1),
+                    fileName = "",
                     program = "",
                     inventory = "",
                     sound = ""
@@ -505,6 +541,7 @@ public class LuaBots : FortressCraftMod
         robot.AddComponent<Robot>();
         robot.GetComponent<Robot>().id = id;
         robot.GetComponent<Robot>().startPosition = pos;
+        robot.GetComponent<Robot>().lookDir = new Vector3(pos.x, pos.y, pos.z + 1);
         robot.GetComponent<Robot>().inventory = new List<ItemBase>();
         robot.GetComponent<Robot>().digSound = digSound;
         robot.GetComponent<Robot>().buildSound = buildSound;
@@ -771,6 +808,7 @@ public class LuaBots : FortressCraftMod
             {
                 msgType = 0,
                 position = spawnPos,
+                fileName = "",
                 program = ""
             };
             ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
@@ -791,6 +829,7 @@ public class LuaBots : FortressCraftMod
                 msgType = 2,
                 id = currentRobot.id,
                 position = currentRobot.transform.position,
+                fileName = "",
                 program = "",
             };
             ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);
@@ -819,6 +858,7 @@ public class LuaBots : FortressCraftMod
                     msgType = 1,
                     id = currentRobot.id,
                     position = currentRobot.transform.position,
+                    fileName = currentRobot.fileName,
                     program = currentRobot.program
                 };
                 ModManager.ModSendClientCommToServer("Maverick.LuaBots", msg);

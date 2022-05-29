@@ -10,6 +10,7 @@ public class Robot : MonoBehaviour
     public int id;
     public string networkSound = "";
     public Vector3 startPosition;
+    public Vector3 lookDir;
     public List<ItemBase> inventory;
     public string inventoryDisplay = "[Inventory]\n";
     public AudioClip digSound;
@@ -46,7 +47,6 @@ public class Robot : MonoBehaviour
                 GetComponent<AudioSource>().loop = true;
                 GetComponent<AudioSource>().Play();
             }
-            transform.Rotate(Vector3.up * 50 * Time.deltaTime);
         }
     }
 
@@ -61,18 +61,20 @@ public class Robot : MonoBehaviour
     }
 
     // Moves the robot.
-    private IEnumerator MoveEnum(int x, int y, int z)
+    private IEnumerator MoveEnum(int uX, int uY, int uZ)
     {
         actionCount += 0.5f;
         yield return new WaitForSeconds(actionCount);
-        Vector3 newPos = transform.position + new Vector3(x, y, z);
+        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        transform.LookAt(lookDir);
+        Vector3 newPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(newPos, out long cX, out long cY, out long cZ);
         ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
         if (CubeHelper.IsTypeConsideredPassable(localCube))
         {
             for (int i = 0; i < 4; i++)
             {
-                transform.position += new Vector3(x * 0.25f, y * 0.25f, z * 0.25f);
+                transform.position += new Vector3(uX * 0.25f, uY * 0.25f, uZ * 0.25f);
                 yield return new WaitForSeconds(0.01f);
             }
             transform.position = newPos;
@@ -84,6 +86,8 @@ public class Robot : MonoBehaviour
     {
         actionCount += 0.5f;
         yield return new WaitForSeconds(actionCount);
+        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        transform.LookAt(lookDir);
         Vector3 digPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(digPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
@@ -139,6 +143,8 @@ public class Robot : MonoBehaviour
     {
         actionCount += 0.5f;
         yield return new WaitForSeconds(actionCount);
+        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        transform.LookAt(lookDir);
         Vector3 buildPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(buildPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
@@ -189,6 +195,8 @@ public class Robot : MonoBehaviour
         yield return new WaitForSeconds(actionCount);
         if (WorldScript.mbIsServer)
         {
+            lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+            transform.LookAt(lookDir);
             Vector3 harvestPos = transform.position + new Vector3(uX, uY, uZ);
             WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(harvestPos, out long cX, out long cY, out long cZ);
             if (NetworkManager.instance.mServerThread != null)
@@ -239,6 +247,8 @@ public class Robot : MonoBehaviour
     {
         actionCount += 0.5f;
         yield return new WaitForSeconds(actionCount);
+        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        transform.LookAt(lookDir);
         Vector3 hopperPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
@@ -278,6 +288,8 @@ public class Robot : MonoBehaviour
     {
         actionCount += 0.5f;
         yield return new WaitForSeconds(actionCount);
+        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        transform.LookAt(lookDir);
         Vector3 hopperPos = transform.position + new Vector3(uX, uY, uZ);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
