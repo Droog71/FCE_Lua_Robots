@@ -10,6 +10,8 @@ public class LuaBots : FortressCraftMod
 {
     private float saveTimer;
     private Robot currentRobot;
+    private Texture2D consoleTexture;
+    private Vector2 scrollPosition;
 
     private Coroutine audioLoadingCoroutine;
     private Coroutine serverUpdateCoroutine;
@@ -24,6 +26,7 @@ public class LuaBots : FortressCraftMod
 
     private static bool clientUpdate;
     private static int clientUpdateID;
+    private static string clientUpdateOutput;
     private static string clientUpdateInventory;
     private static Vector3 clientUpdatePos;
     private static Vector3 clientUpdateLook;
@@ -38,6 +41,7 @@ public class LuaBots : FortressCraftMod
     private static bool removeServerBot;
 
     private static bool spawningRobot;
+    private static bool destroyingRobot;
     private static Vector3 robotSpawnPos;
     private static int robotSpawnID;
     private static ParticleSystem spawnEffect;
@@ -76,6 +80,7 @@ public class LuaBots : FortressCraftMod
         public Vector3 lookDir;
         public string fileName;
         public string program;
+        public string output;
         public string inventory;
         public string sound;
     }
@@ -107,6 +112,10 @@ public class LuaBots : FortressCraftMod
             yield return www;
             www.LoadImageIntoTexture(guiBackgroundTexture);
         }
+
+        consoleTexture = new Texture2D(1, 1);
+        consoleTexture.SetPixel(0, 0, new Color(0.0f, 0.0f, 0.0f, 0.5f));
+        consoleTexture.Apply();
 
         ObjImporter importer = new ObjImporter();
         robotMesh = importer.ImportFile(robotModelPath);
@@ -158,7 +167,7 @@ public class LuaBots : FortressCraftMod
         Robot[] robots = FindObjectsOfType<Robot>();
         for (int i = 0; i < robots.Length; i++)
         {
-            if (robots[i] != null)
+            if (robots[i] != null && destroyingRobot == false)
             {
                 LuaBotNetworkMessage message = new LuaBotNetworkMessage
                 {
@@ -168,6 +177,7 @@ public class LuaBots : FortressCraftMod
                     lookDir = robots[i].lookDir,
                     fileName = robots[i].fileName,
                     program = robots[i].program,
+                    output = robots[i].outputDisplay,
                     inventory = robots[i].inventoryDisplay,
                     sound = robots[i].networkSound
                 };
@@ -193,29 +203,35 @@ public class LuaBots : FortressCraftMod
 
                 if (removeServerBot)
                 {
-                    removeServerBot = false;
                     string worldName = WorldScript.instance.mWorldData.mName;
                     string robotFilePath = Path.Combine(assemblyFolder, "Save/" + worldName + "/" + robots[i].id + ".sav");
                     File.Delete(robotFilePath);
                     Destroy(robots[i].gameObject);
-
-                    LuaBotNetworkMessage message = new LuaBotNetworkMessage
-                    {
-                        msgType = 2,
-                        id = serverUpdateID,
-                        position = serverUpdatePos,
-                        lookDir = robots[i].lookDir,
-                        fileName = "",
-                        program = "",
-                        inventory = "",
-                        sound = ""
-                    };
-                    botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
                 }
 
                 break;
             }
         }
+
+        if (removeServerBot)
+        {
+            LuaBotNetworkMessage message = new LuaBotNetworkMessage
+            {
+                msgType = 2,
+                id = serverUpdateID,
+                position = serverUpdatePos,
+                lookDir = new Vector3(serverUpdatePos.x, serverUpdatePos.y, serverUpdatePos.z + 1),
+                fileName = "",
+                program = "",
+                output = "",
+                inventory = "",
+                sound = ""
+            };
+            botInfoCoroutine = StartCoroutine(SendBotInfoToClients(message));
+            removeServerBot = false;
+            destroyingRobot = true;
+        }
+
         serverUpdate = false;
     }
 
@@ -232,8 +248,9 @@ public class LuaBots : FortressCraftMod
                 Vector3 moveDir = (clientUpdatePos - robots[i].transform.position).normalized;
                 Vector3 lookDir = new Vector3(clientUpdateLook.x, robots[i].transform.position.y, clientUpdateLook.z);
                 robots[i].transform.LookAt(lookDir);
-                networkMoveCoroutine = StartCoroutine(MoveNetworkBot(robots[i].gameObject, moveDir, clientUpdatePos));
+                robots[i].outputDisplay = clientUpdateOutput;
                 robots[i].inventoryDisplay = clientUpdateInventory;
+                networkMoveCoroutine = StartCoroutine(MoveNetworkBot(robots[i].gameObject, moveDir, clientUpdatePos));
 
                 if (clientUpdateSound != "" && audioDictionary.ContainsKey(clientUpdateSound))
                 {
@@ -244,18 +261,18 @@ public class LuaBots : FortressCraftMod
                 {
                     SpawnEffects(robots[i].transform.position);
                     Destroy(robots[i].gameObject);
-                    removeClientBot = false;
                 }
 
                 break;
             }
         }
-        if (foundRobot == false)
+        if (foundRobot == false && removeClientBot == false)
         {
             spawningRobot = true;
             robotSpawnPos = clientUpdatePos;
             robotSpawnID = clientUpdateID;
         }
+        removeClientBot = false;
         clientUpdate = false;
     }
 
@@ -363,6 +380,7 @@ public class LuaBots : FortressCraftMod
     private static void ServerWrite(BinaryWriter writer, Player player, object data)
     {
         LuaBotNetworkMessage message = (LuaBotNetworkMessage) data;
+        writer.Write(message.id);
         writer.Write(message.msgType);
         writer.Write(message.position.x);
         writer.Write(message.position.y);
@@ -371,7 +389,7 @@ public class LuaBots : FortressCraftMod
         writer.Write(message.lookDir.y);
         writer.Write(message.lookDir.z);
         writer.Write(message.program);
-        writer.Write(message.id);
+        writer.Write(message.output);
         writer.Write(message.inventory);
         writer.Write(message.sound);
     }
@@ -379,6 +397,7 @@ public class LuaBots : FortressCraftMod
     // Receives server to client network messages.
     private static void ClientRead(NetIncomingMessage message)
     {
+        int id = message.ReadInt32();
         int msgType = message.ReadInt32();
         float posX = message.ReadFloat();
         float posY = message.ReadFloat();
@@ -387,7 +406,7 @@ public class LuaBots : FortressCraftMod
         float lookY = message.ReadFloat();
         float lookZ = message.ReadFloat();
         string program = message.ReadString();
-        int id = message.ReadInt32();
+        string output = message.ReadString();
         string inventory = message.ReadString();
         string sound = message.ReadString();
 
@@ -406,6 +425,7 @@ public class LuaBots : FortressCraftMod
             clientUpdateID = id;
             clientUpdatePos = robotPos;
             clientUpdateLook = robotLook;
+            clientUpdateOutput = output;
             clientUpdateInventory = inventory;
             clientUpdateSound = sound;
             clientUpdate = true;
@@ -416,6 +436,7 @@ public class LuaBots : FortressCraftMod
             clientUpdateID = id;
             clientUpdatePos = robotPos;
             clientUpdateLook = robotLook;
+            clientUpdateOutput = output;
             clientUpdateInventory = inventory;
             removeClientBot = true;
             clientUpdate = true;
@@ -509,6 +530,7 @@ public class LuaBots : FortressCraftMod
             }
         }
         updatingBotInfo = false;
+        destroyingRobot = false;
     }
 
     // Creates a new robot.
@@ -527,6 +549,7 @@ public class LuaBots : FortressCraftMod
                     lookDir = new Vector3(pos.x,pos.y,pos.z + 1),
                     fileName = "",
                     program = "",
+                    output = "",
                     inventory = "",
                     sound = ""
                 };
@@ -873,17 +896,19 @@ public class LuaBots : FortressCraftMod
     // Called by Unity engine for rendering and handling GUI events.
     public void OnGUI()
     {
-        Rect guiBackgroundRect = new Rect(Screen.width * 0.04f, Screen.width * 0.0425f, Screen.width * 0.75f, Screen.width * 0.475f);
+        Rect guiBackgroundRect = new Rect(Screen.width * 0.04f, Screen.width * 0.0425f, Screen.width * 0.75f, Screen.width * 0.5f);
         Rect buttonBackgroundRect = new Rect(Screen.width * 0.795f, Screen.width * 0.027f, Screen.width * 0.2f, Screen.width * 0.08f);
         Rect spawnLuaBotRect = new Rect(Screen.width * 0.81f, Screen.width * 0.037f, Screen.width * 0.17f, Screen.width * 0.06f);
         Rect codeEditingRect = new Rect(Screen.width * 0.1f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
         Rect inventoryRect = new Rect(Screen.width * 0.425f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
         Rect fileNameRect = new Rect(Screen.width * 0.1f, Screen.width * 0.415f, Screen.width * 0.3f, Screen.width * 0.02f);
-        Rect runButtonRect = new Rect(Screen.width * 0.1f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
-        Rect saveButtonRect = new Rect(Screen.width * 0.2f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
-        Rect loadButtonRect = new Rect(Screen.width * 0.3f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
-        Rect closeButtonRect = new Rect(Screen.width * 0.4f, Screen.width * 0.44f, Screen.width * 0.06f, Screen.width * 0.02f);
-        Rect destroyButtonRect = new Rect(Screen.width * 0.6f, Screen.width * 0.44f, Screen.width * 0.12f, Screen.width * 0.02f);
+        Rect runButtonRect = new Rect(Screen.width * 0.12f, Screen.width * 0.445f, Screen.width * 0.06f, Screen.width * 0.02f);
+        Rect saveButtonRect = new Rect(Screen.width * 0.22f, Screen.width * 0.445f, Screen.width * 0.06f, Screen.width * 0.02f);
+        Rect loadButtonRect = new Rect(Screen.width * 0.32f, Screen.width * 0.445f, Screen.width * 0.06f, Screen.width * 0.02f);
+        Rect outputButtonRect = new Rect(Screen.width * 0.425f, Screen.width * 0.415f, Screen.width * 0.12f, Screen.width * 0.02f);
+        Rect inventoryButtonRect = new Rect(Screen.width * 0.6f, Screen.width * 0.415f, Screen.width * 0.12f, Screen.width * 0.02f);
+        Rect destroyButtonRect = new Rect(Screen.width * 0.425f, Screen.width * 0.465f, Screen.width * 0.12f, Screen.width * 0.02f);
+        Rect closeButtonRect = new Rect(Screen.width * 0.6f, Screen.width * 0.465f, Screen.width * 0.12f, Screen.width * 0.02f);
 
         if (InventoryPanelScript.mbIsActive)
         {
@@ -902,7 +927,35 @@ public class LuaBots : FortressCraftMod
             GUI.DrawTexture(guiBackgroundRect, guiBackgroundTexture);
             currentRobot.program = GUI.TextArea(codeEditingRect, currentRobot.program);
             currentRobot.fileName = GUI.TextField(fileNameRect, currentRobot.fileName);
-            GUI.TextArea(inventoryRect, currentRobot.inventoryDisplay);
+            GUI.DrawTexture(inventoryRect, consoleTexture);
+            float consoleRectSize = Screen.width * 0.3f;
+
+            if (currentRobot.display == "inventory")
+            {
+                string[] invArray = currentRobot.inventoryDisplay.Split('\n');
+                float textHeight = invArray.Length * GUI.skin.label.lineHeight;
+                if (!inventoryRect.Contains(Event.current.mousePosition))
+                {
+                    scrollPosition = new Vector2(0, consoleRectSize + textHeight);
+                }
+                Rect consoleRect = new Rect(10, 20, consoleRectSize - 20, textHeight);
+                scrollPosition = GUI.BeginScrollView(inventoryRect, scrollPosition, consoleRect, false, false );
+                GUI.Label(consoleRect, currentRobot.inventoryDisplay);
+                GUI.EndScrollView();
+            }
+            else
+            {
+                string[] outputArray = currentRobot.outputDisplay.Split('\n');
+                float textHeight = outputArray.Length * GUI.skin.label.lineHeight;
+                if (!inventoryRect.Contains(Event.current.mousePosition))
+                {
+                    scrollPosition = new Vector2(0, consoleRectSize + textHeight);
+                }
+                Rect consoleRect = new Rect(10, 20, consoleRectSize - 20, textHeight);
+                scrollPosition = GUI.BeginScrollView(inventoryRect, scrollPosition, consoleRect, false, false );
+                GUI.Label(consoleRect, currentRobot.outputDisplay);
+                GUI.EndScrollView();
+            }
 
             if (GUI.Button(runButtonRect, "Run"))
             {
@@ -919,7 +972,17 @@ public class LuaBots : FortressCraftMod
                 LoadProgram();
             }
 
-            if (GUI.Button(closeButtonRect, "Close"))
+            if (GUI.Button(outputButtonRect, "Output"))
+            {
+                currentRobot.display = "output";
+            }
+
+            if (GUI.Button(inventoryButtonRect, "Inventory"))
+            {
+                currentRobot.display = "inventory";
+            }
+
+            if (GUI.Button(closeButtonRect, "Close Window"))
             {
                 CloseGUI();
             }

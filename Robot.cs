@@ -2,6 +2,8 @@
 using System.Collections;
 using MoonSharp.Interpreter;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
 
 public class Robot : MonoBehaviour
 {
@@ -12,6 +14,8 @@ public class Robot : MonoBehaviour
     public Vector3 startPosition;
     public Vector3 lookDir;
     public List<ItemBase> inventory;
+    public string display = "output";
+    public string outputDisplay = "[Output]\n";
     public string inventoryDisplay = "[Inventory]\n";
     public AudioClip digSound;
     public AudioClip buildSound;
@@ -23,8 +27,13 @@ public class Robot : MonoBehaviour
     private UnityEngine.Coroutine harvestCoroutine;
     private UnityEngine.Coroutine takeFromHopperCoroutine;
     private UnityEngine.Coroutine emptyToHopperCoroutine;
+    private UnityEngine.Coroutine chatCoroutine;
+    private UnityEngine.Coroutine printCoroutine;
+    private delegate void Action();
+    private delegate void Action<T>(T t);
     private delegate void Action<T, U, V>(T t, U u, V v);
     private delegate TResult Func<in T1, in T2, in T3, out TResult> (T1 arg1, T2 arg2, T3 arg3);
+    private delegate TResult Func<out TResult> ();
 
     // Initialization.
     public IEnumerator Start()
@@ -355,6 +364,36 @@ public class Robot : MonoBehaviour
         }
     }
 
+    // Sends chat messages.
+    private IEnumerator ChatEnum(string message)
+    {
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
+        if (NetworkManager.instance.mServerThread != null)
+        {
+            ChatLine chatLine = new ChatLine
+            {
+                mPlayer = -1,
+                mPlayerName = "[SERVER]",
+                mText = "Lua Bot " + id + ": " + message,
+                mType = ChatLine.Type.Normal
+            };
+            NetworkManager.instance.QueueChatMessage(chatLine);
+        }
+    }
+
+    // Prints a line to the output console.
+    private IEnumerator PrintEnum(string line)
+    {
+        actionCount += 0.5f;
+        yield return new WaitForSeconds(actionCount);
+        if (outputDisplay.Length >= 10000)
+        {
+            outputDisplay = "[Output]\n";
+        }
+        outputDisplay += line + "\n";
+    }
+
     // Move function called by lua scripts.
     private void Move(int x, int y, int z)
     {
@@ -421,6 +460,37 @@ public class Robot : MonoBehaviour
         return CubeHelper.IsTypeConsideredPassable(localCube);
     }
 
+    // Prints a list of all available scripts.
+    private void GetScripts()
+    {
+        string assemblyFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        string scriptFolder = Path.Combine(assemblyFolder, "Scripts");
+        Directory.CreateDirectory(scriptFolder);
+        DirectoryInfo dinfo = new DirectoryInfo(scriptFolder);
+        foreach (FileInfo file in dinfo.GetFiles("*.lua"))
+        {
+            Print(file.Name);
+        }
+    }
+
+    // Gets the robot's id number.
+    private int GetID()
+    {
+        return id;
+    }
+
+    // Chat function called by lua scripts.
+    private void Chat(string message)
+    {
+        chatCoroutine = StartCoroutine(ChatEnum(message));
+    }
+
+    // Print function called by lua scripts.
+    private void Print(string line)
+    {
+        printCoroutine = StartCoroutine(PrintEnum(line));
+    }
+
     // Runs the robot's lua program.
     public void RunScript()
     {
@@ -442,7 +512,22 @@ public class Robot : MonoBehaviour
 
         script.Globals["IsPassable"] = (Func<int, int, int, bool>)IsPassable;
 
-        script.DoString(scriptCode);
+        script.Globals["GetScripts"] = (Action)GetScripts;
+
+        script.Globals["GetID"] = (Func<int>)GetID;
+
+        script.Globals["Chat"] = (Action<string>)Chat;
+
+        script.Globals["Print"] = (Action<string>)Print;
+
+        try
+        {
+            script.DoString(scriptCode);
+        }
+        catch(System.Exception e)
+        {
+            Print(e.Message);
+        }
 
         actionCount = 0;
     }
