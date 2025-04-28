@@ -507,7 +507,7 @@ public class LuaBot : MonoBehaviour
         printCoroutine = StartCoroutine(PrintEnum(line));
     }
 
-    // Chat function called by lua scripts.
+    // Delay function called by lua scripts.
     private void Delay(float seconds)
     {
         delayCoroutine = StartCoroutine(DelayEnum(seconds));
