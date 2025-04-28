@@ -1,26 +1,32 @@
-﻿using UnityEngine;
+﻿using System.IO;
+using UnityEngine;
+using System.Reflection;
 using System.Collections;
 using MoonSharp.Interpreter;
 using System.Collections.Generic;
-using System.IO;
-using System.Reflection;
 
-public class Robot : MonoBehaviour
+public class LuaBot : MonoBehaviour
 {
-    public string program = "FCE OS V 0.0001 A";
-    public string fileName = "help.lua";
     public int id;
+    private float actionCount;
+    private readonly float actionInterval = 0.5f;
+
     public string networkSound = "";
-    public Vector3 startPosition;
-    public Vector3 lookDir;
-    public List<ItemBase> inventory;
     public string display = "output";
+    public string fileName = "help.lua";
     public string outputDisplay = "[Output]\n";
+    public string program = "FCE OS V 0.0001 A";
     public string inventoryDisplay = "[Inventory]\n";
+
+    public Vector3 lookDir;
+    public Vector3 startPosition;
+
+    public List<ItemBase> inventory;
+
     public AudioClip digSound;
     public AudioClip buildSound;
     public AudioClip robotSound;
-    private float actionCount;
+
     private UnityEngine.Coroutine moveCoroutine;
     private UnityEngine.Coroutine digCoroutine;
     private UnityEngine.Coroutine buildCoroutine;
@@ -29,11 +35,14 @@ public class Robot : MonoBehaviour
     private UnityEngine.Coroutine emptyToHopperCoroutine;
     private UnityEngine.Coroutine chatCoroutine;
     private UnityEngine.Coroutine printCoroutine;
+    private UnityEngine.Coroutine delayCoroutine;
+
     private delegate void Action();
     private delegate void Action<T>(T t);
     private delegate void Action<T, U, V>(T t, U u, V v);
-    private delegate TResult Func<in T1, in T2, in T3, out TResult> (T1 arg1, T2 arg2, T3 arg3);
     private delegate TResult Func<out TResult> ();
+    private delegate TResult Func<in T1, in T2, out TResult> (T1 arg1, T2 arg2);
+    private delegate TResult Func<in T1, in T2, in T3, out TResult> (T1 arg1, T2 arg2, T3 arg3);
 
     // Initialization.
     public IEnumerator Start()
@@ -72,7 +81,7 @@ public class Robot : MonoBehaviour
     // Moves the robot.
     private IEnumerator MoveEnum(int uX, int uY, int uZ)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
         transform.LookAt(lookDir);
@@ -93,7 +102,7 @@ public class Robot : MonoBehaviour
     // Digs a cube below the robot.
     private IEnumerator DigEnum(int uX, int uY, int uZ)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
         transform.LookAt(lookDir);
@@ -131,7 +140,7 @@ public class Robot : MonoBehaviour
                             break;
                         }
                     }
-                    if (gathered == false)
+                    if (!gathered)
                     {
                         inventory.Add(stack);
                     }
@@ -150,7 +159,7 @@ public class Robot : MonoBehaviour
     // Places a cube below the robot.
     private IEnumerator BuildEnum(int uX, int uY, int uZ)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
         transform.LookAt(lookDir);
@@ -200,7 +209,7 @@ public class Robot : MonoBehaviour
     // Harvests seeds from hydroponics bays.
     private IEnumerator HarvestEnum(int uX, int uY, int uZ)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         if (WorldScript.mbIsServer)
         {
@@ -234,7 +243,7 @@ public class Robot : MonoBehaviour
                                     break;
                                 }
                             }
-                            if (gathered == false)
+                            if (!gathered)
                             {
                                 inventory.Add(plant);
                             }
@@ -254,7 +263,7 @@ public class Robot : MonoBehaviour
     // Takes items from a hopper.
     private IEnumerator TakeFromHopperEnum(int uX, int uY, int uZ)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
         transform.LookAt(lookDir);
@@ -295,7 +304,7 @@ public class Robot : MonoBehaviour
     // Adds items to a hopper.
     private IEnumerator EmptyToHopperEnum(int uX, int uY, int uZ)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
         transform.LookAt(lookDir);
@@ -367,7 +376,7 @@ public class Robot : MonoBehaviour
     // Sends chat messages.
     private IEnumerator ChatEnum(string message)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         if (NetworkManager.instance.mServerThread != null)
         {
@@ -385,13 +394,20 @@ public class Robot : MonoBehaviour
     // Prints a line to the output console.
     private IEnumerator PrintEnum(string line)
     {
-        actionCount += 0.5f;
+        actionCount += actionInterval;
         yield return new WaitForSeconds(actionCount);
         if (outputDisplay.Length >= 10000)
         {
             outputDisplay = "[Output]\n";
         }
         outputDisplay += line + "\n";
+    }
+
+    // Pauses execution.
+    private IEnumerator DelayEnum(float seconds)
+    {
+        actionCount += seconds;
+        yield return new WaitForSeconds(actionCount);
     }
 
     // Move function called by lua scripts.
@@ -491,34 +507,29 @@ public class Robot : MonoBehaviour
         printCoroutine = StartCoroutine(PrintEnum(line));
     }
 
+    // Chat function called by lua scripts.
+    private void Delay(float seconds)
+    {
+        delayCoroutine = StartCoroutine(DelayEnum(seconds));
+    }
+
     // Runs the robot's lua program.
     public void RunScript()
     {
         string scriptCode = @"" + program; 
-
         Script script = new Script();
-
         script.Globals["Move"] = (Action<int, int, int>)Move;
-
         script.Globals["Dig"] = (Action<int, int, int>)Dig;
-
         script.Globals["Build"] = (Action<int, int, int>)Build;
-
         script.Globals["Harvest"] = (Action<int, int, int>)Harvest;
-
-        script.Globals["TakeFromHopper"] = (Action<int, int, int>)TakeFromHopper;
-
-        script.Globals["EmptyToHopper"] = (Action<int, int, int>)EmptyToHopper;
-
         script.Globals["IsPassable"] = (Func<int, int, int, bool>)IsPassable;
-
+        script.Globals["TakeFromHopper"] = (Action<int, int, int>)TakeFromHopper;
+        script.Globals["EmptyToHopper"] = (Action<int, int, int>)EmptyToHopper;
         script.Globals["GetScripts"] = (Action)GetScripts;
-
         script.Globals["GetID"] = (Func<int>)GetID;
-
         script.Globals["Chat"] = (Action<string>)Chat;
-
         script.Globals["Print"] = (Action<string>)Print;
+        script.Globals["Delay"] = (Action<float>)Delay;
 
         try
         {

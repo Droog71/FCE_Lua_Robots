@@ -1,17 +1,24 @@
-﻿using UnityEngine;
-using System;
+﻿using System;
 using System.IO;
+using UnityEngine;
+using Lidgren.Network;
 using System.Reflection;
 using System.Collections;
-using Lidgren.Network;
 using System.Collections.Generic;
 
 public class LuaBots : FortressCraftMod
 {
+    private float guiTimer;
     private float saveTimer;
-    private Robot currentRobot;
-    private Texture2D consoleTexture;
+    private bool guiClosed;
+    private bool foundPlayer;
+    private int luaBotItemID;
+
+    private LuaBot currentRobot;
     private Vector2 scrollPosition;
+
+    private Texture2D consoleTexture;
+    private LocalPlayerScript localPlayer;
 
     private Coroutine audioLoadingCoroutine;
     private Coroutine serverUpdateCoroutine;
@@ -20,8 +27,10 @@ public class LuaBots : FortressCraftMod
     private static Coroutine botInfoCoroutine;
 
     public bool displayGUI;
-    private bool botInfoUpdate;
     private bool robotsLoaded;
+    private bool botInfoUpdate;
+    private bool digButtonPressed;
+    private bool buildButtonPressed;
     private static bool updatingBotInfo;
 
     private static bool clientUpdate;
@@ -97,6 +106,7 @@ public class LuaBots : FortressCraftMod
     // Initialization
     public IEnumerator Start()
     {
+        MaterialData.GetItemIdOrCubeValues("Maverick.LuaBot", out luaBotItemID, out ushort cubeType, out ushort cubeValue);
         robotTextureUriBuilder.Scheme = "file";
         robotTexture = new Texture2D(2048, 2048, TextureFormat.DXT5, false);
         using (WWW www = new WWW(robotTextureUriBuilder.ToString()))
@@ -164,7 +174,7 @@ public class LuaBots : FortressCraftMod
     private IEnumerator DistributeBotInfo()
     {
         botInfoUpdate = true;
-        Robot[] robots = FindObjectsOfType<Robot>();
+        LuaBot[] robots = FindObjectsOfType<LuaBot>();
         for (int i = 0; i < robots.Length; i++)
         {
             if (robots[i] != null && destroyingRobot == false)
@@ -192,7 +202,7 @@ public class LuaBots : FortressCraftMod
     // Handles incoming network messages from clients.
     private void UpdateServer()
     {
-        Robot[] robots = FindObjectsOfType<Robot>();
+        LuaBot[] robots = FindObjectsOfType<LuaBot>();
         for (int i = 0; i < robots.Length; i++)
         {
             if (robots[i].id == serverUpdateID)
@@ -239,7 +249,7 @@ public class LuaBots : FortressCraftMod
     private void UpdateClient()
     {
         bool foundRobot = false;
-        Robot[] robots = FindObjectsOfType<Robot>();
+        LuaBot[] robots = FindObjectsOfType<LuaBot>();
         for (int i = 0; i < robots.Length; i++)
         {
             if (robots[i].id == clientUpdateID)
@@ -345,7 +355,7 @@ public class LuaBots : FortressCraftMod
         {
             if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
             {
-                Robot robot = hit.collider.gameObject.GetComponent<Robot>();
+                LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
                 if (robot != null && !displayGUI)
                 {
                     currentRobot = robot;
@@ -354,11 +364,62 @@ public class LuaBots : FortressCraftMod
             }
         }
 
+        bool b2Pressed = (Input.GetButton("Fire2") || Input.GetAxis("Fire2") > 0.5f);
+        if (b2Pressed && !UIManager.CursorShown && !digButtonPressed && !guiClosed)
+        { 
+            if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
+            {
+                LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
+                if (robot != null && !displayGUI)
+                {
+                    currentRobot = robot;
+                    DestroyRobot();
+                }
+            }
+        }
+        digButtonPressed = b2Pressed;
+
+        if (!foundPlayer)
+        {
+            localPlayer = FindObjectOfType<LocalPlayerScript>();
+            foundPlayer |= localPlayer != null;
+        }
+
+        if (localPlayer != null && !guiClosed)
+        {
+            bool b1Pressed = (Input.GetButton("Fire1") || Input.GetAxis("Fire1") > 0.5f);
+            if (b1Pressed && !buildButtonPressed && !UIManager.CursorShown)
+            { 
+                int tab = SurvivalHotBarManager.CurrentTab;
+                int block = SurvivalHotBarManager.CurrentBlock;
+                var selectedItem = SurvivalHotBarManager.instance.maEntries[tab, block];
+                ItemEntry itemEntry = ItemEntry.mEntries[selectedItem.itemType];
+                if (itemEntry.Name == "Lua Bot")
+                {
+                    if (CraftRobot())
+                    {
+                        RequestNewRobot();
+                    }
+                }
+            }
+            buildButtonPressed = b1Pressed;
+        }
+
         if (displayGUI)
         {
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 CloseGUI();
+            }
+        }
+
+        if (guiClosed)
+        { 
+            guiTimer += Time.deltaTime;
+            if (guiTimer >= 0.5f)
+            {
+                guiTimer = 0.0f;
+                guiClosed = false;
             }
         }
     }
@@ -487,8 +548,8 @@ public class LuaBots : FortressCraftMod
     private static int FindID()
     {
         int id = 0;
-        Robot[] robots = FindObjectsOfType<Robot>();
-        foreach (Robot robot in robots)
+        LuaBot[] robots = FindObjectsOfType<LuaBot>();
+        foreach (LuaBot robot in robots)
         {
             if (id <= robot.id)
             {
@@ -561,14 +622,14 @@ public class LuaBots : FortressCraftMod
         robot.GetComponent<MeshFilter>().mesh = robotMesh;
         robot.GetComponent<Renderer>().material.mainTexture = robotTexture;
         robot.AddComponent<AudioSource>();
-        robot.AddComponent<Robot>();
-        robot.GetComponent<Robot>().id = id;
-        robot.GetComponent<Robot>().startPosition = pos;
-        robot.GetComponent<Robot>().lookDir = new Vector3(pos.x, pos.y, pos.z + 1);
-        robot.GetComponent<Robot>().inventory = new List<ItemBase>();
-        robot.GetComponent<Robot>().digSound = digSound;
-        robot.GetComponent<Robot>().buildSound = buildSound;
-        robot.GetComponent<Robot>().robotSound = robotSound;
+        robot.AddComponent<LuaBot>();
+        robot.GetComponent<LuaBot>().id = id;
+        robot.GetComponent<LuaBot>().startPosition = pos;
+        robot.GetComponent<LuaBot>().lookDir = new Vector3(pos.x, pos.y, pos.z + 1);
+        robot.GetComponent<LuaBot>().inventory = new List<ItemBase>();
+        robot.GetComponent<LuaBot>().digSound = digSound;
+        robot.GetComponent<LuaBot>().buildSound = buildSound;
+        robot.GetComponent<LuaBot>().robotSound = robotSound;
         robot.transform.position = pos;
         SpawnEffects(pos);
         return robot;
@@ -630,6 +691,7 @@ public class LuaBots : FortressCraftMod
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
         displayGUI = false;
+        guiClosed = true;
     }
 
     // Saves a lua script to disk.
@@ -661,7 +723,7 @@ public class LuaBots : FortressCraftMod
         string worldName = WorldScript.instance.mWorldData.mName;
         string saveFolder = Path.Combine(assemblyFolder, "Save/" + worldName);
         Directory.CreateDirectory(saveFolder);
-        Robot[] robots = FindObjectsOfType<Robot>();
+        LuaBot[] robots = FindObjectsOfType<LuaBot>();
         for (int i = 0; i < robots.Length; i++)
         {
             string filePath = Path.Combine(saveFolder, robots[i].id.ToString() + ".sav");
@@ -729,7 +791,7 @@ public class LuaBots : FortressCraftMod
                 {
                     if (robot != null)
                     {
-                        currentRobot = robot.GetComponent<Robot>();
+                        currentRobot = robot.GetComponent<LuaBot>();
                     }
 
                     if (currentRobot != null)
@@ -791,6 +853,29 @@ public class LuaBots : FortressCraftMod
         }
     }
 
+    private void UpdateHotBar()
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            int tab = SurvivalHotBarManager.CurrentTab;
+            SurvivalHotBarManager.HotBarEntry entry = SurvivalHotBarManager.instance.maEntries[tab, i];
+
+            int count = 0;
+            int lastStackCount = 0;
+
+            if (entry.itemType >= 0)
+            {
+                count = WorldScript.mLocalPlayer.mInventory.GetSuitAndInventoryItemCount(entry.itemType);
+                lastStackCount = WorldScript.mLocalPlayer.mInventory.GetItemCount(entry.itemType, true, true);
+            }
+            
+            entry.count = count;
+            entry.lastStackCount = lastStackCount;
+            entry.UpdateState();
+        }
+        SurvivalHotBarManager.MarkAsDirty();
+    }
+
     // Crafts a robot.
     private bool CraftRobot()
     {
@@ -799,7 +884,7 @@ public class LuaBots : FortressCraftMod
         {
             if (item != null)
             {
-                if (item.GetName().Equals("ConstructoBot Crate"))
+                if (item.GetName().Equals("Lua Bot"))
                 {
                     if (item.GetAmount() > 1)
                     {
@@ -809,7 +894,7 @@ public class LuaBots : FortressCraftMod
                     {
                         WorldScript.mLocalPlayer.mInventory.RemoveSpecificItem(item);
                     }
-                    InventoryPanelScript.instance.Reshow();
+                    UpdateHotBar();
                     return true;
                 }
             }
@@ -820,11 +905,10 @@ public class LuaBots : FortressCraftMod
     // Attempts to spawn a new robot.
     private void RequestNewRobot()
     {
-        long x = WorldScript.mLocalPlayer.mnWorldX;
-        long y = WorldScript.mLocalPlayer.mnWorldY;
-        long z = WorldScript.mLocalPlayer.mnWorldZ;
-        Vector3 spawnCoords = WorldScript.instance.mPlayerFrustrum.GetCoordsToUnity(x, y, z);
-        Vector3 spawnPos = new Vector3(spawnCoords.x + 0.5f, spawnCoords.y + 0.5f, spawnCoords.z + 0.5f);
+        long x = (long) localPlayer.mPlayerBlockPicker.selectBlockPos.x;
+        long y = (long) localPlayer.mPlayerBlockPicker.selectBlockPos.y;
+        long z = (long) localPlayer.mPlayerBlockPicker.selectBlockPos.z;
+        Vector3 spawnPos = new Vector3(x + 0.5f, y + 1.5f, z + 0.5f);
         if (NetworkManager.instance.mClientThread != null)
         {
             LuaBotNetworkMessage msg = new LuaBotNetworkMessage
@@ -865,7 +949,26 @@ public class LuaBots : FortressCraftMod
             SpawnEffects(currentRobot.transform.position);
             Destroy(currentRobot.gameObject);
         }
-        WorldScript.mLocalPlayer.mInventory.CollectValue(eCubeTypes.ConstructoBotCrate, 0, 1);
+        bool foundStack = false;
+        ItemBase[,] items = WorldScript.mLocalPlayer.mInventory.maItemInventory;
+        foreach (ItemBase item in items)
+        {
+            if (item != null)
+            {
+                if (item.GetName().Equals("Lua Bot"))
+                {
+                    item.IncrementStack(1);
+                    foundStack = true;
+                    UpdateHotBar();
+                    break;
+                }
+            }
+        }
+        if (!foundStack)
+        {
+            ItemStack item = new ItemStack(luaBotItemID, 1);
+            WorldScript.mLocalPlayer.mInventory.AddItem(item);
+        }
         CloseGUI();
     }
 
@@ -897,8 +1000,6 @@ public class LuaBots : FortressCraftMod
     public void OnGUI()
     {
         Rect guiBackgroundRect = new Rect(Screen.width * 0.04f, Screen.width * 0.0425f, Screen.width * 0.75f, Screen.width * 0.5f);
-        Rect buttonBackgroundRect = new Rect(Screen.width * 0.795f, Screen.width * 0.027f, Screen.width * 0.2f, Screen.width * 0.08f);
-        Rect spawnLuaBotRect = new Rect(Screen.width * 0.81f, Screen.width * 0.037f, Screen.width * 0.17f, Screen.width * 0.06f);
         Rect codeEditingRect = new Rect(Screen.width * 0.1f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
         Rect inventoryRect = new Rect(Screen.width * 0.425f, Screen.width * 0.1f, Screen.width * 0.3f, Screen.width * 0.3f);
         Rect fileNameRect = new Rect(Screen.width * 0.1f, Screen.width * 0.415f, Screen.width * 0.3f, Screen.width * 0.02f);
@@ -909,18 +1010,6 @@ public class LuaBots : FortressCraftMod
         Rect inventoryButtonRect = new Rect(Screen.width * 0.6f, Screen.width * 0.415f, Screen.width * 0.12f, Screen.width * 0.02f);
         Rect destroyButtonRect = new Rect(Screen.width * 0.425f, Screen.width * 0.465f, Screen.width * 0.12f, Screen.width * 0.02f);
         Rect closeButtonRect = new Rect(Screen.width * 0.6f, Screen.width * 0.465f, Screen.width * 0.12f, Screen.width * 0.02f);
-
-        if (InventoryPanelScript.mbIsActive)
-        {
-            GUI.DrawTexture(buttonBackgroundRect, guiBackgroundTexture);
-            if (GUI.Button(spawnLuaBotRect, "Spawn Lua Bot\n(1x ConstructoBot Crate)"))
-            {
-                if (CraftRobot())
-                {
-                    RequestNewRobot();
-                }
-            }
-        }
 
         if (displayGUI)
         {
@@ -987,7 +1076,7 @@ public class LuaBots : FortressCraftMod
                 CloseGUI();
             }
 
-            if (GUI.Button(destroyButtonRect, "Destroy Robot"))
+            if (GUI.Button(destroyButtonRect, "Collect Robot"))
             {
                 DestroyRobot();
             }
