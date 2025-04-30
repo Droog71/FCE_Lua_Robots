@@ -307,120 +307,141 @@ public class LuaBots : FortressCraftMod
     // Called once per frame by unity engine.
     public void Update()
     {
-        if (WorldScript.mbIsServer && WorldScript.instance != null)
+        try
         {
-            if (WorldScript.instance.mWorldData != null)
+            if (WorldScript.mbIsServer && WorldScript.instance != null)
             {
-                if (!robotsLoaded)
+                if (WorldScript.instance.mWorldData != null)
                 {
-                    LoadRobots();
-                }
-                else if (GameState.State == GameStateEnum.Playing)
-                {
-                    saveTimer += 1 * Time.deltaTime;
-                    if (saveTimer >= 30)
+                    if (!robotsLoaded)
                     {
-                        saveCoroutine = StartCoroutine(SaveRobots());
-                        saveTimer = 0;
+                        LoadRobots();
+                    }
+                    else if (GameState.State == GameStateEnum.Playing)
+                    {
+                        saveTimer += 1 * Time.deltaTime;
+                        if (saveTimer >= 30)
+                        {
+                            saveCoroutine = StartCoroutine(SaveRobots());
+                            saveTimer = 0;
+                        }
                     }
                 }
             }
-        }
 
-        if (spawningRobot == true)
-        {
-            SpawnRobot(robotSpawnPos, robotSpawnID, this);
-            spawningRobot = false;
-        }
-
-        if (serverUpdate)
-        {
-            UpdateServer();
-        }
-
-        if (clientUpdate == true)
-        {
-            UpdateClient();
-        }
-
-        if (NetworkManager.instance != null && !botInfoUpdate)
-        {
-            if (NetworkManager.instance.mServerThread != null)
+            if (spawningRobot == true)
             {
-                serverUpdateCoroutine = StartCoroutine(DistributeBotInfo());
+                SpawnRobot(robotSpawnPos, robotSpawnID, this);
+                spawningRobot = false;
             }
-        }
 
-        if (Input.GetKeyDown(KeyCode.E))
-        {
-            if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
+            if (serverUpdate)
             {
-                LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
-                if (robot != null && !displayGUI)
+                UpdateServer();
+            }
+
+            if (clientUpdate == true)
+            {
+                UpdateClient();
+            }
+
+            if (NetworkManager.instance != null && !botInfoUpdate)
+            {
+                if (NetworkManager.instance.mServerThread != null)
                 {
-                    currentRobot = robot;
-                    OpenGUI();
+                    serverUpdateCoroutine = StartCoroutine(DistributeBotInfo());
                 }
             }
-        }
 
-        bool b2Pressed = (Input.GetButton("Fire2") || Input.GetAxis("Fire2") > 0.5f);
-        if (b2Pressed && !UIManager.CursorShown && !digButtonPressed && !guiClosed)
-        { 
-            if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
+            if (Input.GetKeyDown(KeyCode.E))
             {
-                LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
-                if (robot != null && !displayGUI)
+                if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
                 {
-                    currentRobot = robot;
-                    DestroyRobot();
-                }
-            }
-        }
-        digButtonPressed = b2Pressed;
-
-        if (!foundPlayer)
-        {
-            localPlayer = FindObjectOfType<LocalPlayerScript>();
-            foundPlayer |= localPlayer != null;
-        }
-
-        if (localPlayer != null && !guiClosed)
-        {
-            bool b1Pressed = (Input.GetButton("Fire1") || Input.GetAxis("Fire1") > 0.5f);
-            if (b1Pressed && !buildButtonPressed && !UIManager.CursorShown)
-            { 
-                int tab = SurvivalHotBarManager.CurrentTab;
-                int block = SurvivalHotBarManager.CurrentBlock;
-                var selectedItem = SurvivalHotBarManager.instance.maEntries[tab, block];
-                ItemEntry itemEntry = ItemEntry.mEntries[selectedItem.itemType];
-                if (itemEntry.Name == "Lua Bot")
-                {
-                    if (CraftRobot())
+                    LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
+                    if (robot != null && !displayGUI)
                     {
-                        RequestNewRobot();
+                        currentRobot = robot;
+                        OpenGUI();
                     }
                 }
             }
-            buildButtonPressed = b1Pressed;
-        }
 
-        if (displayGUI)
+            bool b2Pressed = (Input.GetButton("Fire2") || Input.GetAxis("Fire2") > 0.5f);
+            if (b2Pressed && !UIManager.CursorShown && !digButtonPressed && !guiClosed)
+            {
+                if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
+                {
+                    LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
+                    if (robot != null && !displayGUI)
+                    {
+                        currentRobot = robot;
+                        DestroyRobot();
+                    }
+                }
+            }
+            digButtonPressed = b2Pressed;
+
+            if (!foundPlayer)
+            {
+                localPlayer = FindObjectOfType<LocalPlayerScript>();
+                foundPlayer |= localPlayer != null;
+            }
+
+            if (localPlayer != null && !guiClosed)
+            {
+                bool b1Pressed = (Input.GetButton("Fire1") || Input.GetAxis("Fire1") > 0.5f);
+                if (b1Pressed && !buildButtonPressed && !UIManager.CursorShown)
+                {
+                    int tab = SurvivalHotBarManager.CurrentTab;
+                    int block = SurvivalHotBarManager.CurrentBlock;
+                    var selectedItem = SurvivalHotBarManager.instance.maEntries[tab, block];
+                    ItemEntry itemEntry = ItemEntry.mEntries[selectedItem.itemType];
+                    if (itemEntry.Name == "Lua Bot")
+                    {
+                        if (CraftRobot())
+                        {
+                            RequestNewRobot();
+                        }
+                    }
+                }
+                buildButtonPressed = b1Pressed;
+            }
+
+            if (displayGUI)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    CloseGUI();
+                }
+            }
+
+            if (guiClosed)
+            {
+                guiTimer += Time.deltaTime;
+                if (guiTimer >= 0.5f)
+                {
+                    guiTimer = 0.0f;
+                    UIManager.AllowBuilding = true;
+                    UIManager.AllowInteracting = true;
+                    UIManager.AllowMovement = true;
+                    UIManager.CrossHairShown = true;
+                    UIManager.CursorShown = false;
+                    UIManager.GamePaused = false;
+                    UIManager.HotBarShown = true;
+                    UIManager.HudShown = true;
+                    Cursor.visible = false;
+                    Cursor.lockState = CursorLockMode.Locked;
+                    displayGUI = false;
+                    guiClosed = false;
+                }
+            }
+        }
+        catch (Exception e) 
         {
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                CloseGUI();
-            }
-        }
-
-        if (guiClosed)
-        { 
-            guiTimer += Time.deltaTime;
-            if (guiTimer >= 0.5f)
-            {
-                guiTimer = 0.0f;
-                guiClosed = false;
-            }
+            Debug.Log("------------Lua Bots Error------------");
+            Debug.Log(e.Message);
+            Debug.Log(e.StackTrace);
+            Debug.Log("------------Lua Bots Error------------");
         }
     }
 
@@ -680,17 +701,6 @@ public class LuaBots : FortressCraftMod
     // Closes the robot GUI.
     private void CloseGUI()
     {
-        UIManager.AllowBuilding = true;
-        UIManager.AllowInteracting = true;
-        UIManager.AllowMovement = true;
-        UIManager.CrossHairShown = true;
-        UIManager.CursorShown = false;
-        UIManager.GamePaused = false;
-        UIManager.HotBarShown = true;
-        UIManager.HudShown = true;
-        Cursor.visible = false;
-        Cursor.lockState = CursorLockMode.Locked;
-        displayGUI = false;
         guiClosed = true;
     }
 
@@ -867,6 +877,11 @@ public class LuaBots : FortressCraftMod
             {
                 count = WorldScript.mLocalPlayer.mInventory.GetSuitAndInventoryItemCount(entry.itemType);
                 lastStackCount = WorldScript.mLocalPlayer.mInventory.GetItemCount(entry.itemType, true, true);
+            }
+            else if (entry.cubeType != eCubeTypes.NULL)
+            {
+                count = WorldScript.mLocalPlayer.mInventory.GetCubeTypeCountValue(entry.cubeType, entry.cubeValue);
+                lastStackCount = WorldScript.mLocalPlayer.mInventory.GetCubeTypeCountValue(entry.cubeType, entry.cubeValue, true, true);
             }
             
             entry.count = count;
@@ -1046,10 +1061,23 @@ public class LuaBots : FortressCraftMod
                 GUI.EndScrollView();
             }
 
-            if (GUI.Button(runButtonRect, "Run"))
+            Color guiColor = GUI.color;
+
+            if (currentRobot.running)
             {
-                StartRobot();
+                GUI.color = Color.green;
+                currentRobot.running &= !GUI.Button(runButtonRect, "->");
             }
+            else
+            {
+                GUI.color = Color.red;
+                if (GUI.Button(runButtonRect, "->"))
+                {
+                    StartRobot();
+                }
+            }
+
+            GUI.color = guiColor;
 
             if (GUI.Button(saveButtonRect, "Save"))
             {

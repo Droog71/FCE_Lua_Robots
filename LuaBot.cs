@@ -8,9 +8,12 @@ using System.Collections.Generic;
 public class LuaBot : MonoBehaviour
 {
     public int id;
-    private float actionCount;
-    private readonly float actionInterval = 0.5f;
-
+    public bool running;
+    private bool moving;
+    private bool delaying;
+    private float delayTime;
+    public bool msgAvailable;
+    public string incomingMessage;
     public string networkSound = "";
     public string display = "output";
     public string fileName = "help.lua";
@@ -19,6 +22,7 @@ public class LuaBot : MonoBehaviour
     public string inventoryDisplay = "[Inventory]\n";
 
     public Vector3 lookDir;
+    private Vector3 moveDir;
     public Vector3 startPosition;
 
     public List<ItemBase> inventory;
@@ -27,14 +31,8 @@ public class LuaBot : MonoBehaviour
     public AudioClip buildSound;
     public AudioClip robotSound;
 
+    private UnityEngine.Coroutine mainCoroutine;
     private UnityEngine.Coroutine moveCoroutine;
-    private UnityEngine.Coroutine digCoroutine;
-    private UnityEngine.Coroutine buildCoroutine;
-    private UnityEngine.Coroutine harvestCoroutine;
-    private UnityEngine.Coroutine takeFromHopperCoroutine;
-    private UnityEngine.Coroutine emptyToHopperCoroutine;
-    private UnityEngine.Coroutine chatCoroutine;
-    private UnityEngine.Coroutine printCoroutine;
     private UnityEngine.Coroutine delayCoroutine;
 
     private delegate void Action();
@@ -78,35 +76,48 @@ public class LuaBot : MonoBehaviour
         }
     }
 
-    // Moves the robot.
-    private IEnumerator MoveEnum(int uX, int uY, int uZ)
+    // Returns true if the cube at the given coordinates is passable.
+    private bool IsPassable(int x, int y, int z)
     {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
-        transform.LookAt(lookDir);
-        Vector3 newPos = transform.position + new Vector3(uX, uY, uZ);
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(newPos, out long cX, out long cY, out long cZ);
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
+        Vector3 checkPos = transform.position + new Vector3(x, y, z);
+        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(checkPos, out long cX, out long cY, out long cZ);
         ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
-        if (CubeHelper.IsTypeConsideredPassable(localCube))
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                transform.position += new Vector3(uX * 0.25f, uY * 0.25f, uZ * 0.25f);
-                yield return new WaitForSeconds(0.01f);
-            }
-            transform.position = newPos;
-        }
+        return CubeHelper.IsTypeConsideredPassable(localCube);
     }
 
-    // Digs a cube below the robot.
-    private IEnumerator DigEnum(int uX, int uY, int uZ)
+    private bool CanMove()
     {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        Vector3 pos = transform.position;
+        lookDir = new Vector3(pos.x + moveDir.x, pos.y, pos.z + moveDir.z);
         transform.LookAt(lookDir);
-        Vector3 digPos = transform.position + new Vector3(uX, uY, uZ);
+        Vector3 newPos = pos + moveDir;
+        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(newPos, out long cX, out long cY, out long cZ);
+        ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
+        return CubeHelper.IsTypeConsideredPassable(localCube);
+    }
+
+    // Move function called by lua scripts.
+    private void Move(int x, int y, int z)
+    {
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
+        moveDir = new Vector3(x, y, z);
+        moving = true;
+    }
+
+    // Digs a cube and places it in the robot's inventory.
+    private void Dig(int x, int y, int z)
+    {
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
+        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
+        transform.LookAt(lookDir);
+        Vector3 digPos = transform.position + new Vector3(x, y, z);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(digPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
         {
@@ -156,14 +167,15 @@ public class LuaBot : MonoBehaviour
         }
     }
 
-    // Places a cube below the robot.
-    private IEnumerator BuildEnum(int uX, int uY, int uZ)
+    // Places a cube from the robot's inventory.
+    private void Build(int x, int y, int z)
     {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
+        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
         transform.LookAt(lookDir);
-        Vector3 buildPos = transform.position + new Vector3(uX, uY, uZ);
+        Vector3 buildPos = transform.position + new Vector3(x, y, z);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(buildPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
         {
@@ -206,68 +218,15 @@ public class LuaBot : MonoBehaviour
         }
     }
 
-    // Harvests seeds from hydroponics bays.
-    private IEnumerator HarvestEnum(int uX, int uY, int uZ)
+    // Hopper function called by lua scripts.
+    private void TakeFromHopper(int x, int y, int z)
     {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        if (WorldScript.mbIsServer)
-        {
-            lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
-            transform.LookAt(lookDir);
-            Vector3 harvestPos = transform.position + new Vector3(uX, uY, uZ);
-            WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(harvestPos, out long cX, out long cY, out long cZ);
-            if (NetworkManager.instance.mServerThread != null)
-            {
-                cX = cX - 64;
-                cY = cY - 64;
-                cZ = cZ - 64;
-            }
-            Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
-            if (segment != null)
-            {
-                if (segment.mbInitialGenerationComplete && !segment.mbDestroyed)
-                {
-                    if (segment.FetchEntity(eSegmentEntity.Hydroponics, cX, cY, cZ) is HydroponicsBay hydroponicsBay)
-                    {
-                        if (hydroponicsBay.HasPlant && hydroponicsBay.mPlant != null && hydroponicsBay.mPlant.mbReadyForHarvest)
-                        {
-                            ItemBase plant = hydroponicsBay.mPlant.Collect();
-                            bool gathered = false;
-                            foreach (ItemBase item in inventory)
-                            {
-                                if (item.GetName() == plant.GetName())
-                                {
-                                    item.IncrementStack(1);
-                                    gathered = true;
-                                    break;
-                                }
-                            }
-                            if (!gathered)
-                            {
-                                inventory.Add(plant);
-                            }
-                            if (digSound != null)
-                            {
-                                AudioSource.PlayClipAtPoint(digSound, transform.position);
-                            }
-                            networkSound = "dig";
-                            UpdateInventory();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Takes items from a hopper.
-    private IEnumerator TakeFromHopperEnum(int uX, int uY, int uZ)
-    {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
+        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
         transform.LookAt(lookDir);
-        Vector3 hopperPos = transform.position + new Vector3(uX, uY, uZ);
+        Vector3 hopperPos = transform.position + new Vector3(x, y, z);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
         {
@@ -302,13 +261,14 @@ public class LuaBot : MonoBehaviour
     }
 
     // Adds items to a hopper.
-    private IEnumerator EmptyToHopperEnum(int uX, int uY, int uZ)
+    private void EmptyToHopper(int x, int y, int z)
     {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+        Mathf.Clamp(x, -1, 1);
+        Mathf.Clamp(y, -1, 1);
+        Mathf.Clamp(z, -1, 1);
+        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
         transform.LookAt(lookDir);
-        Vector3 hopperPos = transform.position + new Vector3(uX, uY, uZ);
+        Vector3 hopperPos = transform.position + new Vector3(x, y, z);
         WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
         if (NetworkManager.instance.mServerThread != null)
         {
@@ -373,107 +333,186 @@ public class LuaBot : MonoBehaviour
         }
     }
 
-    // Sends chat messages.
-    private IEnumerator ChatEnum(string message)
-    {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        if (NetworkManager.instance.mServerThread != null)
-        {
-            ChatLine chatLine = new ChatLine
-            {
-                mPlayer = -1,
-                mPlayerName = "[SERVER]",
-                mText = "Lua Bot " + id + ": " + message,
-                mType = ChatLine.Type.Normal
-            };
-            NetworkManager.instance.QueueChatMessage(chatLine);
-        }
-    }
-
-    // Prints a line to the output console.
-    private IEnumerator PrintEnum(string line)
-    {
-        actionCount += actionInterval;
-        yield return new WaitForSeconds(actionCount);
-        if (outputDisplay.Length >= 10000)
-        {
-            outputDisplay = "[Output]\n";
-        }
-        outputDisplay += line + "\n";
-    }
-
-    // Pauses execution.
-    private IEnumerator DelayEnum(float seconds)
-    {
-        actionCount += seconds;
-        yield return new WaitForSeconds(actionCount);
-    }
-
-    // Move function called by lua scripts.
-    private void Move(int x, int y, int z)
-    {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        moveCoroutine = StartCoroutine(MoveEnum(x, y, z));
-    }
-
-    // Dig function called by lua scripts.
-    private void Dig(int x, int y, int z)
-    {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        digCoroutine = StartCoroutine(DigEnum(x, y, z));
-    }
-
-    // Build function called by lua scripts.
-    private void Build(int x, int y, int z)
-    {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        buildCoroutine = StartCoroutine(BuildEnum(x, y, z));
-    }
-
-    // Harvest function called by lua scripts.
+    // Harvests seeds from hydroponics bays.
     private void Harvest(int x, int y, int z)
     {
         Mathf.Clamp(x, -1, 1);
         Mathf.Clamp(y, -1, 1);
         Mathf.Clamp(z, -1, 1);
-        harvestCoroutine = StartCoroutine(HarvestEnum(x, y, z));
+        if (WorldScript.mbIsServer)
+        {
+            lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
+            transform.LookAt(lookDir);
+            Vector3 harvestPos = transform.position + new Vector3(x, y, z);
+            WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(harvestPos, out long cX, out long cY, out long cZ);
+            if (NetworkManager.instance.mServerThread != null)
+            {
+                cX = cX - 64;
+                cY = cY - 64;
+                cZ = cZ - 64;
+            }
+            Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
+            if (segment != null)
+            {
+                if (segment.mbInitialGenerationComplete && !segment.mbDestroyed)
+                {
+                    if (segment.FetchEntity(eSegmentEntity.Hydroponics, cX, cY, cZ) is HydroponicsBay hydroponicsBay)
+                    {
+                        if (hydroponicsBay.HasPlant && hydroponicsBay.mPlant != null && hydroponicsBay.mPlant.mbReadyForHarvest)
+                        {
+                            ItemBase plant = hydroponicsBay.mPlant.Collect();
+                            bool gathered = false;
+                            foreach (ItemBase item in inventory)
+                            {
+                                if (item.GetName() == plant.GetName())
+                                {
+                                    item.IncrementStack(1);
+                                    gathered = true;
+                                    break;
+                                }
+                            }
+                            if (!gathered)
+                            {
+                                inventory.Add(plant);
+                            }
+                            if (digSound != null)
+                            {
+                                AudioSource.PlayClipAtPoint(digSound, transform.position);
+                            }
+                            networkSound = "dig";
+                            UpdateInventory();
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    // Hopper function called by lua scripts.
-    private void TakeFromHopper(int x, int y, int z)
+    // Returns the current power of a PowerStorageInterface or PowerConsumerInterface.
+    private int GetPower(int uX, int uY, int uZ)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        takeFromHopperCoroutine = StartCoroutine(TakeFromHopperEnum(x, y, z));
+        if (WorldScript.mbIsServer)
+        {
+            lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+            transform.LookAt(lookDir);
+            Vector3 psbPos = transform.position + new Vector3(uX, uY, uZ);
+            WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(psbPos, out long cX, out long cY, out long cZ);
+            if (NetworkManager.instance.mServerThread != null)
+            {
+                cX = cX - 64;
+                cY = cY - 64;
+                cZ = cZ - 64;
+            }
+            Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
+            if (segment != null)
+            {
+                if (segment.mbInitialGenerationComplete && !segment.mbDestroyed)
+                {
+                    SegmentEntity entity = segment.SearchEntity(cX, cY, cZ);
+                    if (entity == null)
+                    {
+                         return -1;
+                    }
+                    if (entity.mbDelete)
+                    {
+                         return -2;
+                    }
+                    if (entity is PowerStorageInterface psi)
+                    {
+                        return (int)psi.CurrentPower;
+                    }
+                    if (entity is PowerConsumerInterface pci)
+                    {
+                        return (int)(pci.GetMaxPower() - pci.GetRemainingPowerCapacity());
+                    }
+                    return -3;
+                }
+                return -4;
+            }
+            return -5;
+        }
+        return -6;
     }
 
-    // Hopper function called by lua scripts.
-    private void EmptyToHopper(int x, int y, int z)
+    // Returns the state of an ore extractor.
+    private string GetExtractorState(int uX, int uY, int uZ)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        emptyToHopperCoroutine = StartCoroutine(EmptyToHopperEnum(x, y, z));
+        Dictionary<OreExtractor.eState, string> stateDict = new Dictionary<OreExtractor.eState, string>
+        {
+            { OreExtractor.eState.eDrillStuck, "Stuck" },
+            { OreExtractor.eState.eFetchingEntryPoint, "Fetching Entry Point" },
+            { OreExtractor.eState.eFetchingExtractionPoint, "Fetching Extraction Point" },
+            { OreExtractor.eState.eIdle, "Idle" },
+            { OreExtractor.eState.eMining, "Mining" },
+            { OreExtractor.eState.eOutOfPower, "Out of Power" },
+            { OreExtractor.eState.eOutOfPowerVeinDepleted, "Out of Power / Vein Depleted" },
+            { OreExtractor.eState.eOutOfStorage, "Out of Storage" },
+            { OreExtractor.eState.eOutOfStorageVeinDepleted, "Out of Storage / Vein Depleted" },
+            { OreExtractor.eState.eSearchingForOre, "Searching for Ore" },
+            { OreExtractor.eState.eVeinDepleted, "Vein Depleted" }
+        };
+ 
+        if (WorldScript.mbIsServer)
+        {
+            lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
+            transform.LookAt(lookDir);
+            Vector3 psbPos = transform.position + new Vector3(uX, uY, uZ);
+            WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(psbPos, out long cX, out long cY, out long cZ);
+            if (NetworkManager.instance.mServerThread != null)
+            {
+                cX = cX - 64;
+                cY = cY - 64;
+                cZ = cZ - 64;
+            }
+            Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
+            if (segment != null)
+            {
+                if (segment.mbInitialGenerationComplete && !segment.mbDestroyed)
+                {
+                    if (segment.FetchEntity(eSegmentEntity.OreExtractor, cX, cY, cZ) is OreExtractor ex)
+                    {
+                        return stateDict[ex.meState];
+                    }
+                    return "Extractor Error";
+                }
+                return "Bad Segment Error";
+            }
+            return "Null Segment Error";
+        }
+        return "WorldScript Error";
     }
 
-    // Returns true if the cube at the given coordinates is passable.
-    private bool IsPassable(int x, int y, int z)
+    // Sends a message to another bot.
+    private bool Transmit(int botID, string data)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        Vector3 checkPos = transform.position + new Vector3(x, y, z);
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(checkPos, out long cX, out long cY, out long cZ);
-        ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
-        return CubeHelper.IsTypeConsideredPassable(localCube);
+        LuaBot[] robots = FindObjectsOfType<LuaBot>();
+        foreach (LuaBot robot in robots)
+        {
+            if (botID == robot.id && !robot.msgAvailable)
+            {
+                robot.msgAvailable = true;
+                robot.incomingMessage = data;
+                return true;
+            }
+        }
+        return false;
+    }
+ 
+    // Receives a message from another bot.
+    private string Receive()
+    {
+        if (msgAvailable)
+        {
+            msgAvailable = false;
+            return incomingMessage;
+        }
+        return "No message available!";
+    }
+
+    // Gets the robot's id number.
+    private int GetID()
+    {
+        return id;
     }
 
     // Prints a list of all available scripts.
@@ -489,57 +528,135 @@ public class LuaBot : MonoBehaviour
         }
     }
 
-    // Gets the robot's id number.
-    private int GetID()
-    {
-        return id;
-    }
-
-    // Chat function called by lua scripts.
+    // Sends a chat message.
     private void Chat(string message)
     {
-        chatCoroutine = StartCoroutine(ChatEnum(message));
+        if (NetworkManager.instance.mServerThread != null)
+        {
+            ChatLine chatLine = new ChatLine
+            {
+                mPlayer = -1,
+                mPlayerName = "[SERVER]",
+                mText = "Lua Bot " + id + ": " + message,
+                mType = ChatLine.Type.Normal
+            };
+            NetworkManager.instance.QueueChatMessage(chatLine);
+        }
     }
 
-    // Print function called by lua scripts.
+    // Prints text to the output window.
     private void Print(string line)
     {
-        printCoroutine = StartCoroutine(PrintEnum(line));
+        if (outputDisplay.Length >= 10000)
+        {
+            outputDisplay = "[Output]\n";
+        }
+        outputDisplay += line + "\n";
     }
 
-    // Delay function called by lua scripts.
+    // Pauses execution.
     private void Delay(float seconds)
     {
-        delayCoroutine = StartCoroutine(DelayEnum(seconds));
+        delaying = true;
+        delayTime = seconds;
     }
 
     // Runs the robot's lua program.
     public void RunScript()
     {
-        string scriptCode = @"" + program; 
-        Script script = new Script();
-        script.Globals["Move"] = (Action<int, int, int>)Move;
-        script.Globals["Dig"] = (Action<int, int, int>)Dig;
-        script.Globals["Build"] = (Action<int, int, int>)Build;
-        script.Globals["Harvest"] = (Action<int, int, int>)Harvest;
-        script.Globals["IsPassable"] = (Func<int, int, int, bool>)IsPassable;
-        script.Globals["TakeFromHopper"] = (Action<int, int, int>)TakeFromHopper;
-        script.Globals["EmptyToHopper"] = (Action<int, int, int>)EmptyToHopper;
-        script.Globals["GetScripts"] = (Action)GetScripts;
-        script.Globals["GetID"] = (Func<int>)GetID;
-        script.Globals["Chat"] = (Action<string>)Chat;
-        script.Globals["Print"] = (Action<string>)Print;
-        script.Globals["Delay"] = (Action<float>)Delay;
+        mainCoroutine = StartCoroutine(RunScriptEnum());
+    }
 
-        try
+    // Runs the robot's lua program.
+    private IEnumerator RunScriptEnum()
+    {
+        if (!running && program.Contains("function main()"))
         {
-            script.DoString(scriptCode);
+            running = true;
+            Print("Loading script...");
+            string scriptCode = @"" + program;
+            Script script = new Script(CoreModules.None);
+            script.Globals["Move"] = (Action<int, int, int>)Move;
+            script.Globals["Dig"] = (Action<int, int, int>)Dig;
+            script.Globals["Build"] = (Action<int, int, int>)Build;
+            script.Globals["Harvest"] = (Action<int, int, int>)Harvest;
+            script.Globals["IsPassable"] = (Func<int, int, int, bool>)IsPassable;
+            script.Globals["TakeFromHopper"] = (Action<int, int, int>)TakeFromHopper;
+            script.Globals["EmptyToHopper"] = (Action<int, int, int>)EmptyToHopper;
+            script.Globals["GetPower"] = (Func<int, int, int, int>)GetPower;
+            script.Globals["GetExtractorState"] = (Func<int, int, int, string>)GetExtractorState;
+            script.Globals["Transmit"] = (Func<int, string, bool>)Transmit;
+            script.Globals["Receive"] = (Func<string>)Receive;
+            script.Globals["GetScripts"] = (Action)GetScripts;
+            script.Globals["GetID"] = (Func<int>)GetID;
+            script.Globals["Chat"] = (Action<string>)Chat;
+            script.Globals["Print"] = (Action<string>)Print;
+            script.Globals["Delay"] = (Action<float>)Delay;
+
+            try
+            {
+                script.DoString(scriptCode);
+            }
+            catch (System.Exception e)
+            {
+                Print(e.Message);
+            }
+
+            DynValue function = script.Globals.Get("main");
+
+            if (function != null)
+            {
+                DynValue coroutine = script.CreateCoroutine(function);
+                if (coroutine != null)
+                {
+                    Print("Starting main coroutine.");
+                    coroutine.Coroutine.AutoYieldCounter = 1;
+
+                    DynValue result = coroutine.Coroutine.Resume();
+                    while (running && result.Type == DataType.YieldRequest)
+                    {
+                        float insTime = 0.05f - Time.deltaTime;
+                        insTime = Mathf.Clamp(insTime, 0.0f, 0.05f);
+                        yield return new WaitForSeconds(insTime);
+                        if (delaying)
+                        {
+                            yield return new WaitForSeconds(delayTime);
+                            delaying = false;
+                        } 
+                        else if (moving)
+                        {
+                            if (CanMove())
+                            {
+                                Vector3 newPos = transform.position + moveDir;
+                                for (int i = 0; i < 8; i++)
+                                {
+                                    float x = moveDir.x * 0.125f;
+                                    float y = moveDir.y * 0.125f;
+                                    float z = moveDir.z * 0.125f;
+                                    transform.position += new Vector3(x, y, z);
+                                    float moveTime = 0.03125f - Time.deltaTime;
+                                    moveTime = Mathf.Clamp(moveTime, 0.0f, 0.03125f);
+                                    yield return new WaitForSeconds(moveTime);
+                                }
+                                transform.position = newPos;
+                            }
+                            moving = false;
+                        }
+                        result = coroutine.Coroutine.Resume();
+                    }
+                }
+                else
+                {
+                    Print("Failed to create coroutine.");
+                }
+            }
         }
-        catch(System.Exception e)
+        else
         {
-            Print(e.Message);
+            Print("Missing main function.");
         }
 
-        actionCount = 0;
+        yield return null;
+        running = false;
     }
 }

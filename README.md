@@ -10,6 +10,10 @@ for loops) can be used to program your robots.
 This mod was created using [MoonSharp](https://www.moonsharp.org/)  
 A Lua interpreter written entirely in C# for the .NET, Mono and Unity platforms.
 
+All programs must contain a function named "main".
+This function will serve as the main coroutine for
+the program.
+
 After the Lua Bot crafting recipe has been researched,
 the robots can be crafted in the manufacturing plant.
 
@@ -27,7 +31,8 @@ All files should use the .lua file extension or the mod will not recognize them.
 Some example programs are included with the mod:
 
 help.lua - displays information about the mod.
-quarry.lua - the robot digs a 10x10x10 hole in the ground.
+shaft.lua - the robot digs a 100x3x3 shaft.
+quarry.lua - the robot digs a 10x20x10 hole.
 tunnel.lua - the robot digs a 50x2x2 tunnel.
 wall.lua - the robot builds a 10x1x10 wall.
 floor.lua - builds a square platform, default size is 20x20.
@@ -76,6 +81,26 @@ EmptyToHopper(x,y,z)
 	 items it is carrying into a hopper
 	 at (x,y,z) relative to the robot.
 	-X,Y,Z values above 1 will be reduced to 1.
+
+GetPower(x,y,z)
+    -Returns the power stored in a power
+    storage block, laser energy transmitter
+    or other power interface at (x,y,z) relative 
+    to the robot.
+    -X,Y,Z values above 1 will be reduced to 1.
+
+GetExtractorState(x,y,z)
+    -Returns the state of an ore extractor
+    at (x,y,z) relative to the robot.
+    -X,Y,Z values above 1 will be reduced to 1.
+
+Transmit(id, string)
+    -Sends data to another lua bot with the
+    given ID. The data should always be a string.
+
+Receive()
+    -Retruns received data if any is available.
+    The data type is always a string.
 	
 IsPassable(x,y,z)
    -Returns true if the cube at (x,y,z) relative
