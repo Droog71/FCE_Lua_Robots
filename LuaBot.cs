@@ -39,6 +39,7 @@ public class LuaBot : MonoBehaviour
     private delegate void Action<T>(T t);
     private delegate void Action<T, U, V>(T t, U u, V v);
     private delegate TResult Func<out TResult> ();
+    private delegate TResult Func<in T1, out TResult> (T1 arg1);
     private delegate TResult Func<in T1, in T2, out TResult> (T1 arg1, T2 arg2);
     private delegate TResult Func<in T1, in T2, in T3, out TResult> (T1 arg1, T2 arg2, T3 arg3);
 
@@ -333,6 +334,19 @@ public class LuaBot : MonoBehaviour
         }
     }
 
+    // Gets the amount of an item in the robot's inventory.
+    private int GetInventory(string itemName)
+    { 
+        foreach (ItemBase item in inventory)
+        {
+            if (item.GetName() == itemName)
+            {
+                return item.GetAmount();
+            }
+        }
+        return 0;
+    }
+
     // Harvests seeds from hydroponics bays.
     private void Harvest(int x, int y, int z)
     {
@@ -583,6 +597,7 @@ public class LuaBot : MonoBehaviour
             script.Globals["IsPassable"] = (Func<int, int, int, bool>)IsPassable;
             script.Globals["TakeFromHopper"] = (Action<int, int, int>)TakeFromHopper;
             script.Globals["EmptyToHopper"] = (Action<int, int, int>)EmptyToHopper;
+            script.Globals["GetInventory"] = (Func<string, int>)GetInventory;
             script.Globals["GetPower"] = (Func<int, int, int, int>)GetPower;
             script.Globals["GetExtractorState"] = (Func<int, int, int, string>)GetExtractorState;
             script.Globals["Transmit"] = (Func<int, string, bool>)Transmit;

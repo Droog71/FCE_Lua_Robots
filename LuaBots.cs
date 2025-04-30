@@ -418,7 +418,7 @@ public class LuaBots : FortressCraftMod
             if (guiClosed)
             {
                 guiTimer += Time.deltaTime;
-                if (guiTimer >= 0.5f)
+                if (guiTimer >= 0.25f)
                 {
                     guiTimer = 0.0f;
                     UIManager.AllowBuilding = true;
@@ -848,9 +848,10 @@ public class LuaBots : FortressCraftMod
                 }
                 catch(Exception e)
                 {
-                    Debug.Log("ERROR LOADING LUA BOTS");
-                    Debug.Log("MESSAGE: " + e.Message);
-                    Debug.Log("STACK TRACE: " + e.StackTrace);
+                    Debug.Log("------------Lua Bots Error------------");
+                    Debug.Log(e.Message);
+                    Debug.Log(e.StackTrace);
+                    Debug.Log("------------Lua Bots Error------------");
                 }
 
                 WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(spawnPos, out long cX, out long cY, out long cZ);
