@@ -31,9 +31,7 @@ public class LuaBot : MonoBehaviour
     public AudioClip buildSound;
     public AudioClip robotSound;
 
-    private UnityEngine.Coroutine mainCoroutine;
-    private UnityEngine.Coroutine moveCoroutine;
-    private UnityEngine.Coroutine delayCoroutine;
+    private UnityEngine.Coroutine luaScriptCoroutine;
 
     private delegate void Action();
     private delegate void Action<T>(T t);
@@ -67,6 +65,23 @@ public class LuaBot : MonoBehaviour
         }
     }
 
+    // Gets the coordinates of the cube the robot is focused on.
+    private void GetCubeCoords(int x, int y, int z, out long cX, out long cY, out long cZ)
+    {
+        x = Mathf.Clamp(x, -1, 1);
+        y = Mathf.Clamp(y, -1, 1);
+        z = Mathf.Clamp(z, -1, 1);
+        Vector3 pos = transform.position;
+        lookDir = new Vector3(pos.x + x, pos.y, pos.z + z);
+        transform.LookAt(lookDir);
+        Vector3 cubePos = transform.position + new Vector3(x, y, z);
+        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(cubePos, out long fX, out long fY, out long fZ);
+        bool server = NetworkManager.instance.mServerThread != null;
+        cX = server? fX - 64 : fX;
+        cY = server? fY - 64 : fY;
+        cZ = server? fZ - 64 : fZ;
+    }
+
     // Updates the robot's inventory.
     public void UpdateInventory()
     {
@@ -80,22 +95,7 @@ public class LuaBot : MonoBehaviour
     // Returns true if the cube at the given coordinates is passable.
     private bool IsPassable(int x, int y, int z)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        Vector3 checkPos = transform.position + new Vector3(x, y, z);
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(checkPos, out long cX, out long cY, out long cZ);
-        ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
-        return CubeHelper.IsTypeConsideredPassable(localCube);
-    }
-
-    private bool CanMove()
-    {
-        Vector3 pos = transform.position;
-        lookDir = new Vector3(pos.x + moveDir.x, pos.y, pos.z + moveDir.z);
-        transform.LookAt(lookDir);
-        Vector3 newPos = pos + moveDir;
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(newPos, out long cX, out long cY, out long cZ);
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
         return CubeHelper.IsTypeConsideredPassable(localCube);
     }
@@ -103,29 +103,17 @@ public class LuaBot : MonoBehaviour
     // Move function called by lua scripts.
     private void Move(int x, int y, int z)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        moveDir = new Vector3(x, y, z);
-        moving = true;
+        if (IsPassable(x, y, z))
+        {
+            moveDir = new Vector3(x, y, z);
+            moving = true;
+        }
     }
 
     // Digs a cube and places it in the robot's inventory.
     private void Dig(int x, int y, int z)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
-        transform.LookAt(lookDir);
-        Vector3 digPos = transform.position + new Vector3(x, y, z);
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(digPos, out long cX, out long cY, out long cZ);
-        if (NetworkManager.instance.mServerThread != null)
-        {
-            cX = cX - 64;
-            cY = cY - 64;
-            cZ = cZ - 64;
-        }
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
         if (segment != null)
         {
@@ -171,19 +159,7 @@ public class LuaBot : MonoBehaviour
     // Places a cube from the robot's inventory.
     private void Build(int x, int y, int z)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
-        transform.LookAt(lookDir);
-        Vector3 buildPos = transform.position + new Vector3(x, y, z);
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(buildPos, out long cX, out long cY, out long cZ);
-        if (NetworkManager.instance.mServerThread != null)
-        {
-            cX = cX - 64;
-            cY = cY - 64;
-            cZ = cZ - 64;
-        }
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
         if (segment != null)
         {
@@ -222,19 +198,7 @@ public class LuaBot : MonoBehaviour
     // Hopper function called by lua scripts.
     private void TakeFromHopper(int x, int y, int z)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
-        transform.LookAt(lookDir);
-        Vector3 hopperPos = transform.position + new Vector3(x, y, z);
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
-        if (NetworkManager.instance.mServerThread != null)
-        {
-            cX = cX - 64;
-            cY = cY - 64;
-            cZ = cZ - 64;
-        }
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         if (WorldScript.mbIsServer)
         {
             Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
@@ -264,19 +228,7 @@ public class LuaBot : MonoBehaviour
     // Adds items to a hopper.
     private void EmptyToHopper(int x, int y, int z)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
-        lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
-        transform.LookAt(lookDir);
-        Vector3 hopperPos = transform.position + new Vector3(x, y, z);
-        WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(hopperPos, out long cX, out long cY, out long cZ);
-        if (NetworkManager.instance.mServerThread != null)
-        {
-            cX = cX - 64;
-            cY = cY - 64;
-            cZ = cZ - 64;
-        }
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         if (WorldScript.mbIsServer)
         {
             Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
@@ -350,21 +302,9 @@ public class LuaBot : MonoBehaviour
     // Harvests seeds from hydroponics bays.
     private void Harvest(int x, int y, int z)
     {
-        Mathf.Clamp(x, -1, 1);
-        Mathf.Clamp(y, -1, 1);
-        Mathf.Clamp(z, -1, 1);
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         if (WorldScript.mbIsServer)
         {
-            lookDir = new Vector3(transform.position.x + x, transform.position.y, transform.position.z + z);
-            transform.LookAt(lookDir);
-            Vector3 harvestPos = transform.position + new Vector3(x, y, z);
-            WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(harvestPos, out long cX, out long cY, out long cZ);
-            if (NetworkManager.instance.mServerThread != null)
-            {
-                cX = cX - 64;
-                cY = cY - 64;
-                cZ = cZ - 64;
-            }
             Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
             if (segment != null)
             {
@@ -403,20 +343,11 @@ public class LuaBot : MonoBehaviour
     }
 
     // Returns the current power of a PowerStorageInterface or PowerConsumerInterface.
-    private int GetPower(int uX, int uY, int uZ)
+    private int GetPower(int x, int y, int z)
     {
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         if (WorldScript.mbIsServer)
         {
-            lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
-            transform.LookAt(lookDir);
-            Vector3 psbPos = transform.position + new Vector3(uX, uY, uZ);
-            WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(psbPos, out long cX, out long cY, out long cZ);
-            if (NetworkManager.instance.mServerThread != null)
-            {
-                cX = cX - 64;
-                cY = cY - 64;
-                cZ = cZ - 64;
-            }
             Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
             if (segment != null)
             {
@@ -448,36 +379,28 @@ public class LuaBot : MonoBehaviour
         return -6;
     }
 
-    // Returns the state of an ore extractor.
-    private string GetExtractorState(int uX, int uY, int uZ)
+    // Dictionary for converting ore extractor state to string.
+    private readonly Dictionary<OreExtractor.eState, string> extractorStateDict = new Dictionary<OreExtractor.eState, string>
     {
-        Dictionary<OreExtractor.eState, string> stateDict = new Dictionary<OreExtractor.eState, string>
-        {
-            { OreExtractor.eState.eDrillStuck, "Stuck" },
-            { OreExtractor.eState.eFetchingEntryPoint, "Fetching Entry Point" },
-            { OreExtractor.eState.eFetchingExtractionPoint, "Fetching Extraction Point" },
-            { OreExtractor.eState.eIdle, "Idle" },
-            { OreExtractor.eState.eMining, "Mining" },
-            { OreExtractor.eState.eOutOfPower, "Out of Power" },
-            { OreExtractor.eState.eOutOfPowerVeinDepleted, "Out of Power / Vein Depleted" },
-            { OreExtractor.eState.eOutOfStorage, "Out of Storage" },
-            { OreExtractor.eState.eOutOfStorageVeinDepleted, "Out of Storage / Vein Depleted" },
-            { OreExtractor.eState.eSearchingForOre, "Searching for Ore" },
-            { OreExtractor.eState.eVeinDepleted, "Vein Depleted" }
-        };
- 
+        { OreExtractor.eState.eDrillStuck, "Stuck" },
+        { OreExtractor.eState.eFetchingEntryPoint, "Fetching Entry Point" },
+        { OreExtractor.eState.eFetchingExtractionPoint, "Fetching Extraction Point" },
+        { OreExtractor.eState.eIdle, "Idle" },
+        { OreExtractor.eState.eMining, "Mining" },
+        { OreExtractor.eState.eOutOfPower, "Out of Power" },
+        { OreExtractor.eState.eOutOfPowerVeinDepleted, "Out of Power / Vein Depleted" },
+        { OreExtractor.eState.eOutOfStorage, "Out of Storage" },
+        { OreExtractor.eState.eOutOfStorageVeinDepleted, "Out of Storage / Vein Depleted" },
+        { OreExtractor.eState.eSearchingForOre, "Searching for Ore" },
+        { OreExtractor.eState.eVeinDepleted, "Vein Depleted" }
+    };
+
+    // Returns the state of an ore extractor.
+    private string GetExtractorState(int x, int y, int z)
+    {
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         if (WorldScript.mbIsServer)
         {
-            lookDir = new Vector3(transform.position.x + uX, transform.position.y, transform.position.z + uZ);
-            transform.LookAt(lookDir);
-            Vector3 psbPos = transform.position + new Vector3(uX, uY, uZ);
-            WorldScript.instance.mPlayerFrustrum.GetCoordsFromUnity(psbPos, out long cX, out long cY, out long cZ);
-            if (NetworkManager.instance.mServerThread != null)
-            {
-                cX = cX - 64;
-                cY = cY - 64;
-                cZ = cZ - 64;
-            }
             Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
             if (segment != null)
             {
@@ -485,7 +408,7 @@ public class LuaBot : MonoBehaviour
                 {
                     if (segment.FetchEntity(eSegmentEntity.OreExtractor, cX, cY, cZ) is OreExtractor ex)
                     {
-                        return stateDict[ex.meState];
+                        return extractorStateDict[ex.meState];
                     }
                     return "Extractor Error";
                 }
@@ -559,7 +482,7 @@ public class LuaBot : MonoBehaviour
     }
 
     // Prints text to the output window.
-    private void Print(string line)
+    public void Print(string line)
     {
         if (outputDisplay.Length >= 10000)
         {
@@ -578,15 +501,18 @@ public class LuaBot : MonoBehaviour
     // Runs the robot's lua program.
     public void RunScript()
     {
-        mainCoroutine = StartCoroutine(RunScriptEnum());
+        if (!running)
+        {
+            running = true;
+            luaScriptCoroutine = StartCoroutine(RunScriptEnum());
+        }
     }
 
     // Runs the robot's lua program.
     private IEnumerator RunScriptEnum()
     {
-        if (!running && program.Contains("function main()"))
+        if (program.Contains("function main()"))
         {
-            running = true;
             Print("Loading script...");
             string scriptCode = @"" + program;
             Script script = new Script(CoreModules.None);
@@ -626,7 +552,6 @@ public class LuaBot : MonoBehaviour
                 {
                     Print("Starting main coroutine.");
                     coroutine.Coroutine.AutoYieldCounter = 1;
-
                     DynValue result = coroutine.Coroutine.Resume();
                     while (running && result.Type == DataType.YieldRequest)
                     {
@@ -640,21 +565,18 @@ public class LuaBot : MonoBehaviour
                         } 
                         else if (moving)
                         {
-                            if (CanMove())
+                            Vector3 newPos = transform.position + moveDir;
+                            for (int i = 0; i < 8; i++)
                             {
-                                Vector3 newPos = transform.position + moveDir;
-                                for (int i = 0; i < 8; i++)
-                                {
-                                    float x = moveDir.x * 0.125f;
-                                    float y = moveDir.y * 0.125f;
-                                    float z = moveDir.z * 0.125f;
-                                    transform.position += new Vector3(x, y, z);
-                                    float moveTime = 0.03125f - Time.deltaTime;
-                                    moveTime = Mathf.Clamp(moveTime, 0.0f, 0.03125f);
-                                    yield return new WaitForSeconds(moveTime);
-                                }
-                                transform.position = newPos;
+                                float x = moveDir.x * 0.125f;
+                                float y = moveDir.y * 0.125f;
+                                float z = moveDir.z * 0.125f;
+                                transform.position += new Vector3(x, y, z);
+                                float moveTime = 0.03125f - Time.deltaTime;
+                                moveTime = Mathf.Clamp(moveTime, 0.0f, 0.03125f);
+                                yield return new WaitForSeconds(moveTime);
                             }
+                            transform.position = newPos;
                             moving = false;
                         }
                         result = coroutine.Coroutine.Resume();

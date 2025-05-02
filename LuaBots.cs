@@ -289,19 +289,57 @@ public class LuaBots : FortressCraftMod
     // Moves networked robot to the position received by the server.
     private IEnumerator MoveNetworkBot(GameObject robot, Vector3 dir, Vector3 target)
     {
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 8; i++)
         {
             if (robot != null)
             {
-                robot.transform.position += new Vector3(dir.x * 0.25f, dir.y * 0.25f, dir.z * 0.25f);
+                robot.transform.position += new Vector3(dir.x * 0.125f, dir.y * 0.125f, dir.z * 0.125f);
             }
-            yield return new WaitForSeconds(0.01f);
+            float moveTime = 0.03125f - Time.deltaTime;
+            moveTime = Mathf.Clamp(moveTime, 0.0f, 0.03125f);
+            yield return new WaitForSeconds(moveTime);
         }
 
         if (robot != null)
         {
             robot.transform.position = target;
         }
+    }
+
+    // Handles placing and picking up robots using the mouse buttons.
+    private void GetMouseInput()
+    {
+        bool b1Pressed = (Input.GetButton("Fire1") || Input.GetAxis("Fire1") > 0.5f);
+        if (b1Pressed && !buildButtonPressed)
+        {
+            int tab = SurvivalHotBarManager.CurrentTab;
+            int block = SurvivalHotBarManager.CurrentBlock;
+            var selectedItem = SurvivalHotBarManager.instance.maEntries[tab, block];
+            ItemEntry itemEntry = ItemEntry.mEntries[selectedItem.itemType];
+            if (itemEntry.Name == "Lua Bot")
+            {
+                if (CraftRobot())
+                {
+                    RequestNewRobot();
+                }
+            }
+        }
+        buildButtonPressed = b1Pressed;
+
+        bool b2Pressed = (Input.GetButton("Fire2") || Input.GetAxis("Fire2") > 0.5f);
+        if (b2Pressed && !digButtonPressed)
+        {
+            if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
+            {
+                LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
+                if (robot != null && !displayGUI)
+                {
+                    currentRobot = robot;
+                    DestroyRobot();
+                }
+            }
+        }
+        digButtonPressed = b2Pressed;
     }
 
     // Called once per frame by unity engine.
@@ -353,7 +391,7 @@ public class LuaBots : FortressCraftMod
                 }
             }
 
-            if (Input.GetKeyDown(KeyCode.E))
+            if (Input.GetKeyDown(KeyCode.E) && UIManager.AllowInteracting)
             {
                 if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
                 {
@@ -366,45 +404,15 @@ public class LuaBots : FortressCraftMod
                 }
             }
 
-            bool b2Pressed = (Input.GetButton("Fire2") || Input.GetAxis("Fire2") > 0.5f);
-            if (b2Pressed && !UIManager.CursorShown && !digButtonPressed && !guiClosed)
-            {
-                if (Physics.Raycast(Camera.main.transform.position, Camera.main.transform.forward, out RaycastHit hit, 50))
-                {
-                    LuaBot robot = hit.collider.gameObject.GetComponent<LuaBot>();
-                    if (robot != null && !displayGUI)
-                    {
-                        currentRobot = robot;
-                        DestroyRobot();
-                    }
-                }
-            }
-            digButtonPressed = b2Pressed;
-
             if (!foundPlayer)
             {
                 localPlayer = FindObjectOfType<LocalPlayerScript>();
                 foundPlayer |= localPlayer != null;
             }
 
-            if (localPlayer != null && !guiClosed)
+            if (localPlayer != null && UIManager.AllowBuilding)
             {
-                bool b1Pressed = (Input.GetButton("Fire1") || Input.GetAxis("Fire1") > 0.5f);
-                if (b1Pressed && !buildButtonPressed && !UIManager.CursorShown)
-                {
-                    int tab = SurvivalHotBarManager.CurrentTab;
-                    int block = SurvivalHotBarManager.CurrentBlock;
-                    var selectedItem = SurvivalHotBarManager.instance.maEntries[tab, block];
-                    ItemEntry itemEntry = ItemEntry.mEntries[selectedItem.itemType];
-                    if (itemEntry.Name == "Lua Bot")
-                    {
-                        if (CraftRobot())
-                        {
-                            RequestNewRobot();
-                        }
-                    }
-                }
-                buildButtonPressed = b1Pressed;
+                GetMouseInput();
             }
 
             if (displayGUI)
@@ -711,6 +719,8 @@ public class LuaBots : FortressCraftMod
         Directory.CreateDirectory(scriptFolder);
         string filePath = Path.Combine(scriptFolder, currentRobot.fileName);
         File.WriteAllText(filePath, currentRobot.program);
+        currentRobot.running = false;
+        currentRobot.Print("Saved program as " + currentRobot.fileName);
     }
 
     // Loads a lua script from disk.
@@ -864,6 +874,7 @@ public class LuaBots : FortressCraftMod
         }
     }
 
+    // Updates the hotbar.
     private void UpdateHotBar()
     {
         for (int i = 0; i < 10; i++)
