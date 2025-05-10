@@ -36,6 +36,7 @@ public class LuaBot : MonoBehaviour
     private delegate void Action();
     private delegate void Action<T>(T t);
     private delegate void Action<T, U, V>(T t, U u, V v);
+    private delegate void Action<T, U, V, W>(T t, U u, V v ,W w);
     private delegate TResult Func<out TResult> ();
     private delegate TResult Func<in T1, out TResult> (T1 arg1);
     private delegate TResult Func<in T1, in T2, out TResult> (T1 arg1, T2 arg2);
@@ -100,6 +101,14 @@ public class LuaBot : MonoBehaviour
         return CubeHelper.IsTypeConsideredPassable(localCube);
     }
 
+    // Returns true if the cube at the given coordinates is ore.
+    private bool IsOre(int x, int y, int z)
+    {
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
+        ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
+        return CubeHelper.IsOre(localCube);
+    }
+
     // Move function called by lua scripts.
     private void Move(int x, int y, int z)
     {
@@ -123,19 +132,13 @@ public class LuaBot : MonoBehaviour
                 ushort localCubeValue = WorldScript.instance.GetCubeValue(cX, cY, cZ);
                 if (localCube != eCubeTypes.Air)
                 {
-                    int digAmount = 1;
-                    if (CubeHelper.IsOre(localCube))
-                    {
-                        int orePerCube = DifficultySettings.mbCasualResource ? 2560 : 1280;
-                        digAmount = (int)(orePerCube * 0.05f);
-                    }
-                    ItemCubeStack stack = new ItemCubeStack(localCube, localCubeValue, digAmount);
+                    ItemCubeStack stack = new ItemCubeStack(localCube, localCubeValue, 1);
                     bool gathered = false;
                     foreach (ItemBase item in inventory)
                     {
                         if (item.GetName() == stack.GetName())
                         {
-                            item.IncrementStack(digAmount);
+                            item.IncrementStack(1);
                             gathered = true;
                             break;
                         }
@@ -156,8 +159,69 @@ public class LuaBot : MonoBehaviour
         }
     }
 
+    // Mines ore.
+    private void Mine(int x, int y, int z)
+    {
+        GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
+        Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
+        if (segment != null)
+        {
+            if (segment.mbInitialGenerationComplete && !segment.mbDestroyed)
+            {
+                ushort localCube = WorldScript.instance.GetLocalCube(cX, cY, cZ);
+                if (CubeHelper.IsOre(localCube))
+                {
+                    int orePerCube = DifficultySettings.mbCasualResource ? 2560 : 1280;
+                    int oreInCube = segment.GetCubeData(cX, cY, cZ).mValue;
+                    int digAmount = (int)(orePerCube * 0.1f);
+                    int oreRemaining = oreInCube - digAmount;
+                    int oreCollected = digAmount;
+                    if (oreRemaining < digAmount)
+                    {
+                        oreCollected = oreRemaining;
+                        WorldScript.instance.BuildFromEntity(segment, cX, cY, cZ, eCubeTypes.Air);
+                    }
+                    else
+                    {
+                        ushort oreAfterDig = (ushort)(oreRemaining - oreCollected);
+                        WorldScript.instance.SetCubeValue(cX, cY, cZ, oreAfterDig);
+                        int newTexture = TerrainData.GetSideTexture(localCube, oreAfterDig);
+                        int oldTexture = TerrainData.GetSideTexture(localCube, (ushort)oreInCube);
+                        if (newTexture != oldTexture)
+                        {
+                            segment.RequestRegenerateGraphics();
+                        }
+                    }
+                    ushort localCubeValue = WorldScript.instance.GetCubeValue(cX, cY, cZ);
+                    ItemCubeStack stack = new ItemCubeStack(localCube, localCubeValue, oreCollected / 16);
+                    bool gathered = false;
+                    foreach (ItemBase item in inventory)
+                    {
+                        if (item.GetName() == stack.GetName())
+                        {
+                            item.IncrementStack(oreCollected / 16);
+                            gathered = true;
+                            break;
+                        }
+                    }
+                    if (!gathered)
+                    {
+                        inventory.Add(stack);
+                    }
+                    if (digSound != null)
+                    {
+                        AudioSource.PlayClipAtPoint(digSound, transform.position);
+                    }
+                    networkSound = "dig";
+                    UpdateInventory();
+                    Delay(1);
+                }
+            }
+        }
+    }
+
     // Places a cube from the robot's inventory.
-    private void Build(int x, int y, int z)
+    private void Build(int x, int y, int z, string cubeName = "")
     {
         GetCubeCoords(x, y, z, out long cX, out long cY, out long cZ);
         Segment segment = WorldScript.instance.GetSegment(cX, cY, cZ);
@@ -170,7 +234,11 @@ public class LuaBot : MonoBehaviour
                 {
                     if (item.mType == ItemType.ItemCubeStack)
                     {
-                        buildItem = (ItemCubeStack)item;
+                        if (cubeName == "" || item.GetName() == cubeName)
+                        {
+                            buildItem = (ItemCubeStack)item;
+                            break;
+                        }
                     }
                 }
                 if (buildItem != null)
@@ -518,8 +586,10 @@ public class LuaBot : MonoBehaviour
             Script script = new Script(CoreModules.None);
             script.Globals["Move"] = (Action<int, int, int>)Move;
             script.Globals["Dig"] = (Action<int, int, int>)Dig;
-            script.Globals["Build"] = (Action<int, int, int>)Build;
+            script.Globals["Mine"] = (Action<int, int, int>)Mine;
+            script.Globals["Build"] = (Action<int, int, int, string>)Build;
             script.Globals["Harvest"] = (Action<int, int, int>)Harvest;
+            script.Globals["IsOre"] = (Func<int, int, int, bool>)IsOre;
             script.Globals["IsPassable"] = (Func<int, int, int, bool>)IsPassable;
             script.Globals["TakeFromHopper"] = (Action<int, int, int>)TakeFromHopper;
             script.Globals["EmptyToHopper"] = (Action<int, int, int>)EmptyToHopper;
